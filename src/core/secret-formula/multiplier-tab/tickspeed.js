@@ -40,7 +40,7 @@ export const tickspeed = {
   },
   upgrades: {
     name: "Tickspeed Upgrades",
-    displayOverride: () => `${formatInt(Tickspeed.totalUpgrades)} Total`,
+    displayOverride: () => `${format(Tickspeed.totalUpgrades, 2, 2)} Total`,
     multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().tickspeed),
     isActive: true,
     icon: MultiplierTabIcons.PURCHASE("AD"),
