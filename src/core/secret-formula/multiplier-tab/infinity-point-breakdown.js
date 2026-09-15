@@ -1,25 +1,47 @@
-function ipPositivePowers() {
+import {
+  addOrderedFinalImpacts,
+  addOrderedTraceMismatch,
+  addOrderedTransform,
+  createOrderedTransformCache,
+  orderedMultiplyStep,
+  orderedPowerStep,
+  orderedTransformStep,
+} from "./ordered-breakdown";
+
+function ipPositivePowers(skipKey = null) {
   let value = DC.D1;
-  if ((Pelle.isDoomed && PelleCelestialUpgrade.raTeresa3.canBeApplied) || GlyphAlteration.isAdded("infinity")) {
+  if (skipKey !== "glyphPower" &&
+      ((Pelle.isDoomed && PelleCelestialUpgrade.raTeresa3.canBeApplied) || GlyphAlteration.isAdded("infinity"))) {
     value = value.times(getSecondaryGlyphEffect("infinityIP"));
   }
-  if (EndgameMastery(141).isBought) value = value.timesEffectsOf(EndgameMastery(141));
-  if (!player.disablePostReality) value = value.times(AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
-  if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
+  if (skipKey !== "endgameMastery141" && EndgameMastery(141).isBought) {
+    value = value.timesEffectsOf(EndgameMastery(141));
+  }
+  if (skipKey !== "alphaPower" && !player.disablePostReality) {
+    value = value.times(AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
+  }
+  if (skipKey !== "replicantiSurge" && AlchemyResource.exponential.amount > 0 &&
+      ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
     value = value.times(ReplicantiMultipliers.ipPow);
   }
-  if (Ascensions.ipA.isUnlocked) value = value.timesEffectOf(InfinityUpgrade.ipMult);
+  if (skipKey !== "ascensionIPPower" && Ascensions.ipA.isUnlocked) {
+    value = value.timesEffectOf(InfinityUpgrade.ipMult);
+  }
   return value;
 }
 
-function ipDivisors() {
-  const improved = new Decimal(Effects.min(
-    308,
-    Achievement(103),
-    TimeStudy(111),
-    EndgameMastery(151)
-  ));
-  const final = Decimal.max(improved, ipPositivePowers().times(2));
+function ipDivisors(skipKey = null) {
+  const improved = skipKey === "divisor"
+    ? new Decimal(308)
+    : new Decimal(Effects.min(
+      308,
+      Achievement(103),
+      TimeStudy(111),
+      EndgameMastery(151)
+    ));
+  const final = skipKey === "powerCompensation"
+    ? improved
+    : Decimal.max(improved, ipPositivePowers(skipKey).times(2));
   return { improved, final, formulaFinal: final.toNumber() };
 }
 
@@ -113,174 +135,155 @@ function ipReplicantiMult() {
   return ReplicantiMultipliers.ipMult;
 }
 
-function addTransform(steps, key, type, before, after, options = {}) {
-  const transform = {
-    type,
-    before: new Decimal(before),
-    after: new Decimal(after),
-  };
-  if (options.value !== undefined) transform.value = options.value;
-  if (options.display !== undefined) transform.display = options.display;
-  if (options.alwaysShow !== undefined) transform.alwaysShow = options.alwaysShow;
-  steps[key] = transform;
-  return transform.after;
-}
+function evaluateInfinityPoints(skipKey = null, steps = null) {
+  if (!Player.canCrunch) return DC.D1;
 
-function multiplyTransform(steps, key, current, multiplier, display) {
-  const value = new Decimal(multiplier);
-  return addTransform(steps, key, "multiply", current, current.times(value), { value, display });
-}
+  const divisors = ipDivisors(skipKey);
+  const baseAt308 = ipFromDivisor(308);
+  const improvedBase = ipFromDivisor(divisors.improved.toNumber());
+  const finalBase = ipFromDivisor(divisors.formulaFinal);
 
-function powerTransform(steps, key, current, power, display) {
-  const value = new Decimal(power);
-  return addTransform(steps, key, "power", current, current.pow(value), { value, display });
+  if (steps) {
+    addOrderedTransform(steps, "base", "formula", DC.D1, baseAt308, { alwaysShow: true });
+    addOrderedTransform(steps, "divisor", "formula", baseAt308, improvedBase, {
+      display: `Formula divisor ${format(308, 0)} ➜ ${format(divisors.improved, 2, 2)}`
+    });
+    addOrderedTransform(steps, "powerCompensation", "softcap", improvedBase, finalBase, {
+      display: `Formula divisor ${format(divisors.improved, 2, 2)} ➜ ${format(divisors.final, 2, 2)}`
+    });
+  }
+
+  let ip = finalBase;
+
+  if (Pelle.isDisabled("IPMults")) {
+    ip = orderedMultiplyStep(steps, "pelle", ip, DC.D1.timesEffectsOf(PelleRifts.vacuum), skipKey);
+    ip = orderedMultiplyStep(steps, "pelleGlyph", ip, Pelle.specialGlyphEffect.infinity, skipKey);
+    ip = orderedMultiplyStep(steps, "timeStudy", ip, ipTimeStudyMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "achievement", ip, ipAchievementMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "infinityUpgrade", ip, ipInfinityUpgradeMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "dilationUpgrade", ip, ipDilationUpgradeMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "glyph", ip, ipGlyphMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "alchemy", ip, ipReplicantiMult(), skipKey);
+
+    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) {
+      ip = orderedPowerStep(steps, "glyphPower", ip, getSecondaryGlyphEffect("infinityIP"), skipKey);
+    }
+    if (EndgameMastery(141).isBought) {
+      ip = orderedPowerStep(steps, "endgameMastery141", ip, EndgameMastery(141).effectOrDefault(1), skipKey);
+    }
+    if (!player.disablePostReality) {
+      ip = orderedPowerStep(steps, "alphaPower", ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1), skipKey);
+    }
+    if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
+      ip = orderedPowerStep(steps, "replicantiSurge", ip, ReplicantiMultipliers.ipPow, skipKey);
+    }
+    if (Ascensions.ipA.isUnlocked) {
+      ip = orderedPowerStep(steps, "ascensionIPPower", ip, InfinityUpgrade.ipMult.effectOrDefault(1), skipKey);
+    }
+
+    if (skipKey !== "floor") {
+      const floored = ip.floor();
+      if (steps) addOrderedTransform(steps, "floor", "floor", ip, floored);
+      ip = floored;
+    }
+    return ip;
+  }
+
+  if (Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.ETERNITY) {
+    ip = orderedTransformStep(steps, "effarigCap", "hardcap", ip, ip.min(DC.E200), skipKey, {
+      display: `Hardcap at ${format(DC.E200, 2, 2)}`
+    });
+  }
+
+  const totalMultDisabled = Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.INFINITY;
+  if (!totalMultDisabled) {
+    ip = orderedMultiplyStep(steps, "iap", ip, ShopPurchase.IPPurchases.currentMult, skipKey);
+    ip = orderedMultiplyStep(steps, "timeStudy", ip, normalTimeStudyMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "achievement", ip, normalAchievementMult(), skipKey);
+    ip = orderedMultiplyStep(steps, "dilationUpgrade", ip, DilationUpgrade.ipMultDT.effectOrDefault(1), skipKey);
+    ip = orderedMultiplyStep(steps, "glyph", ip, getAdjustedGlyphEffect("infinityIP"), skipKey);
+    if (!Ascensions.ipA.isUnlocked) {
+      ip = orderedMultiplyStep(steps, "infinityUpgrade", ip, InfinityUpgrade.ipMult.effectOrDefault(1), skipKey);
+    }
+    if (Replicanti.areUnlocked) {
+      ip = orderedMultiplyStep(steps, "alchemy", ip, ReplicantiMultipliers.ipMult, skipKey);
+    }
+    if (LHC.voidRunning) {
+      ip = orderedMultiplyStep(steps, "nullUpgrade", ip, NullUpgrade.infinityPointMult.effectOrDefault(1), skipKey);
+    }
+  }
+
+  if (Teresa.isRunning) {
+    ip = orderedPowerStep(steps, "nerfTeresa", ip, 0.55, skipKey);
+  } else if (V.isRunning) {
+    ip = orderedPowerStep(steps, "nerfV", ip, 0.5, skipKey);
+  } else if (Laitela.isRunning) {
+    ip = orderedTransformStep(steps, "nerfLaitela", "softcap", ip, dilatedValueOf(ip), skipKey);
+  }
+
+  if (GlyphAlteration.isAdded("infinity")) {
+    ip = orderedPowerStep(steps, "glyphPower", ip, getSecondaryGlyphEffect("infinityIP"), skipKey);
+  }
+  if (EndgameMastery(141).isBought) {
+    ip = orderedPowerStep(steps, "endgameMastery141", ip, EndgameMastery(141).effectOrDefault(1), skipKey);
+  }
+  if (!player.disablePostReality) {
+    ip = orderedPowerStep(steps, "alphaPower", ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1), skipKey);
+  }
+
+  if (Alpha.isRunning && Alpha.currentStage < 12) {
+    ip = orderedPowerStep(steps, "alphaStageNerf", ip,
+      AlphaUnlocks.infinityDimensions.effects.nerf.effectOrDefault(1), skipKey);
+  }
+
+  const topTier = Alpha.currentStage >= 18 ? 1 : 0;
+  if (Alpha.isRunning && player.challenge.eternity.current > topTier) {
+    ip = orderedPowerStep(steps, "alphaECNerf", ip, Effects.min(
+      1,
+      AlphaUnlocks.eternityChallengeUnlock.effects.nerf,
+      AlphaUnlocks.ecCompletion1.effects.nerf,
+      AlphaUnlocks.ecCompletion5.effects.nerf
+    ), skipKey);
+  }
+
+  if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
+    ip = orderedPowerStep(steps, "replicantiSurge", ip, ReplicantiMultipliers.ipPow, skipKey);
+  }
+
+  if (Ascensions.ipA.isUnlocked) {
+    ip = orderedPowerStep(steps, "ascensionIPPower", ip, InfinityUpgrade.ipMult.effectOrDefault(1), skipKey);
+  }
+
+  if (ResurgenceUpgrade.ipSurge.isBought && !player.disablePostReality) {
+    ip = orderedTransformStep(steps, "ipSurge", "hardcap", ip, ip.min(player.antimatter), skipKey, {
+      display: `Capped to Antimatter (${format(player.antimatter, 2, 2)})`
+    });
+  }
+
+  if (skipKey !== "floor") {
+    const floored = ip.floor();
+    if (steps) addOrderedTransform(steps, "floor", "floor", ip, floored);
+    ip = floored;
+  }
+  return ip;
 }
 
 function buildInfinityPointBreakdown() {
   const steps = {};
   if (!Player.canCrunch) return steps;
 
-  const divisors = ipDivisors();
-
-  const baseAt308 = ipFromDivisor(308);
-  let ip = addTransform(steps, "base", "formula", DC.D1, baseAt308, { alwaysShow: true });
-
-  const improvedBase = ipFromDivisor(divisors.improved.toNumber());
-  ip = addTransform(steps, "divisor", "formula", ip, improvedBase, {
-    display: `Formula divisor ${format(308, 0)} ➜ ${format(divisors.improved, 2, 2)}`
-  });
-
-  const finalBase = ipFromDivisor(divisors.formulaFinal);
-  ip = addTransform(steps, "powerCompensation", "softcap", ip, finalBase, {
-    display: `Formula divisor ${format(divisors.improved, 2, 2)} ➜ ${format(divisors.final, 2, 2)}`
-  });
-
-  if (Pelle.isDisabled("IPMults")) {
-    ip = multiplyTransform(steps, "pelle", ip, DC.D1.timesEffectsOf(PelleRifts.vacuum));
-    ip = multiplyTransform(steps, "pelleGlyph", ip, Pelle.specialGlyphEffect.infinity);
-    ip = multiplyTransform(steps, "timeStudy", ip, ipTimeStudyMult());
-    ip = multiplyTransform(steps, "achievement", ip, ipAchievementMult());
-    ip = multiplyTransform(steps, "infinityUpgrade", ip, ipInfinityUpgradeMult());
-    ip = multiplyTransform(steps, "dilationUpgrade", ip, ipDilationUpgradeMult());
-    ip = multiplyTransform(steps, "glyph", ip, ipGlyphMult());
-    ip = multiplyTransform(steps, "alchemy", ip, ipReplicantiMult());
-
-    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) {
-      ip = powerTransform(steps, "glyphPower", ip, getSecondaryGlyphEffect("infinityIP"));
-    }
-    if (EndgameMastery(141).isBought) {
-      ip = powerTransform(steps, "endgameMastery141", ip, EndgameMastery(141).effectOrDefault(1));
-    }
-    if (!player.disablePostReality) {
-      ip = powerTransform(steps, "alphaPower", ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
-    }
-    if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
-      ip = powerTransform(steps, "replicantiSurge", ip, ReplicantiMultipliers.ipPow);
-    }
-    if (Ascensions.ipA.isUnlocked) {
-      ip = powerTransform(steps, "ascensionIPPower", ip, InfinityUpgrade.ipMult.effectOrDefault(1));
-    }
-
-    ip = addTransform(steps, "floor", "floor", ip, ip.floor());
-    addTransform(steps, "traceMismatch", "override", ip, gainedInfinityPoints(), {
-      display: "Breakdown differs from the current IP gain formula"
-    });
-    return steps;
-  }
-
-  if (Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.ETERNITY) {
-    ip = addTransform(steps, "effarigCap", "hardcap", ip, ip.min(DC.E200), {
-      display: `Hardcap at ${format(DC.E200, 2, 2)}`
-    });
-  }
-
-  // totalIPMult() is overridden to 1 during Effarig Infinity, so none of its component multipliers are applied there.
-  const totalMultDisabled = Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.INFINITY;
-  if (!totalMultDisabled) {
-    ip = multiplyTransform(steps, "iap", ip, ShopPurchase.IPPurchases.currentMult);
-    ip = multiplyTransform(steps, "timeStudy", ip, normalTimeStudyMult());
-    ip = multiplyTransform(steps, "achievement", ip, normalAchievementMult());
-    ip = multiplyTransform(steps, "dilationUpgrade", ip, DilationUpgrade.ipMultDT.effectOrDefault(1));
-    ip = multiplyTransform(steps, "glyph", ip, getAdjustedGlyphEffect("infinityIP"));
-    if (!Ascensions.ipA.isUnlocked) {
-      ip = multiplyTransform(steps, "infinityUpgrade", ip, InfinityUpgrade.ipMult.effectOrDefault(1));
-    }
-    if (Replicanti.areUnlocked) {
-      ip = multiplyTransform(steps, "alchemy", ip, ReplicantiMultipliers.ipMult);
-    }
-    if (LHC.voidRunning) {
-      ip = multiplyTransform(steps, "nullUpgrade", ip, NullUpgrade.infinityPointMult.effectOrDefault(1));
-    }
-  }
-
-  if (Teresa.isRunning) {
-    ip = powerTransform(steps, "nerfTeresa", ip, 0.55);
-  } else if (V.isRunning) {
-    ip = powerTransform(steps, "nerfV", ip, 0.5);
-  } else if (Laitela.isRunning) {
-    ip = addTransform(steps, "nerfLaitela", "softcap", ip, dilatedValueOf(ip));
-  }
-
-  if (GlyphAlteration.isAdded("infinity")) {
-    ip = powerTransform(steps, "glyphPower", ip, getSecondaryGlyphEffect("infinityIP"));
-  }
-  if (EndgameMastery(141).isBought) {
-    ip = powerTransform(steps, "endgameMastery141", ip, EndgameMastery(141).effectOrDefault(1));
-  }
-  if (!player.disablePostReality) {
-    ip = powerTransform(steps, "alphaPower", ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
-  }
-
-  if (Alpha.isRunning && Alpha.currentStage < 12) {
-    ip = powerTransform(steps, "alphaStageNerf", ip,
-      AlphaUnlocks.infinityDimensions.effects.nerf.effectOrDefault(1));
-  }
-
-  const topTier = Alpha.currentStage >= 18 ? 1 : 0;
-  if (Alpha.isRunning && player.challenge.eternity.current > topTier) {
-    ip = powerTransform(steps, "alphaECNerf", ip, Effects.min(
-      1,
-      AlphaUnlocks.eternityChallengeUnlock.effects.nerf,
-      AlphaUnlocks.ecCompletion1.effects.nerf,
-      AlphaUnlocks.ecCompletion5.effects.nerf
-    ));
-  }
-
-  if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
-    ip = powerTransform(steps, "replicantiSurge", ip, ReplicantiMultipliers.ipPow);
-  }
-
-  if (Ascensions.ipA.isUnlocked) {
-    ip = powerTransform(steps, "ascensionIPPower", ip, InfinityUpgrade.ipMult.effectOrDefault(1));
-  }
-
-  if (ResurgenceUpgrade.ipSurge.isBought && !player.disablePostReality) {
-    ip = addTransform(steps, "ipSurge", "hardcap", ip, ip.min(player.antimatter), {
-      display: `Capped to Antimatter (${format(player.antimatter, 2, 2)})`
-    });
-  }
-
-  ip = addTransform(steps, "floor", "floor", ip, ip.floor());
-  addTransform(steps, "traceMismatch", "override", ip, gainedInfinityPoints(), {
-    display: "Breakdown differs from the current IP gain formula"
-  });
+  const finalWith = evaluateInfinityPoints(null, steps);
+  addOrderedFinalImpacts(steps, evaluateInfinityPoints, finalWith);
+  addOrderedTraceMismatch(
+    steps,
+    finalWith,
+    gainedInfinityPoints(),
+    "Breakdown differs from the current IP gain formula"
+  );
   return steps;
 }
 
-let cachedIPBreakdown = {};
-let cachedIPBreakdownAt = -1;
-
-function ipTransform(key) {
-  // A single UI update requests every IP entry independently. Cache for the current millisecond so the full formula
-  // is normally replayed once per render instead of once per row, without holding stale data across game ticks.
-  const now = Date.now();
-  if (cachedIPBreakdownAt !== now) {
-    cachedIPBreakdownAt = now;
-    cachedIPBreakdown = buildInfinityPointBreakdown();
-  }
-  return cachedIPBreakdown[key] ?? null;
-}
-
+const ipTransform = createOrderedTransformCache(buildInfinityPointBreakdown);
 
 export const InfinityPointBreakdown = {
   transform: key => ipTransform(key),

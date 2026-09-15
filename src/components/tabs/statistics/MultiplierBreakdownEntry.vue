@@ -35,6 +35,7 @@ export default {
       selected: 0,
       percentList: [],
       averagedPercentList: [],
+      orderedPathPercentList: [],
       showGroup: [],
       hadChildEntriesAt: [],
       mouseoverIndex: -1,
@@ -48,6 +49,7 @@ export default {
       totalMultiplier: DC.D1,
       totalPositivePower: 1,
       replacePowers: player.options.multiplierTab.replacePowers,
+      orderedFinalImpact: true,
       inNC12: false,
     };
   },
@@ -100,6 +102,12 @@ export default {
     replacePowers(newValue) {
       player.options.multiplierTab.replacePowers = newValue;
     },
+    orderedFinalImpact() {
+      if (!this.resource.isOrdered) return;
+      this.lastLayoutChange = Date.now();
+      this.rollingAverage.clear();
+      this.calculatePercents();
+    },
   },
   created() {
     if (this.groups.length > 1 && player.options.multiplierTab.showAltGroup) {
@@ -135,7 +143,7 @@ export default {
     },
     calculatePercents() {
       if (this.resource.isOrdered) {
-        this.calculateOrderedPercents();
+        this.calculateOrderedImpacts();
         return;
       }
 
@@ -194,34 +202,74 @@ export default {
       this.totalMultiplier = Decimal.pow10(log10Mult);
       this.totalPositivePower = totalPosPow;
     },
-    calculateOrderedPercents() {
-      // Ordered resources contain transformations which are not generally commutative. Instead of trying to rewrite
-      // hardcaps/softcaps/powers as equivalent multipliers, measure each step by the amount it changes log10(value).
-      // Positive steps are normalized to 100%; negative steps show how much of that positive growth they remove.
-      const deltas = this.entries.map(entry => {
-        if (!entry.data.hasTransform || !entry.data.isVisible) return DC.D0;
-        const before = Decimal.max(entry.data.transformBefore, DC.D1).log10();
-        const after = Decimal.max(entry.data.transformAfter, DC.D1).log10();
-        return after.sub(before);
-      });
-      const positiveTotal = deltas
-        .filter(delta => delta.gt(0))
+    calculateOrderedImpacts() {
+      const impacts = this.entries.map((entry, index) => this.orderedImpactDelta(index, this.orderedFinalImpact));
+      const directImpacts = this.entries.map((entry, index) => this.orderedImpactDelta(index, false));
+      const maxImpact = impacts
+        .map(delta => delta.abs())
+        .reduce((max, delta) => Decimal.max(max, delta), DC.D0);
+      const directPathTotal = directImpacts
+        .map(delta => delta.abs())
         .reduce((sum, delta) => sum.add(delta), DC.D0);
-
       const hasVisibleTransforms = this.entries.some(entry => entry.data.hasTransform && entry.data.isVisible);
       if (hasVisibleTransforms) this.lastNotEmptyAt = Date.now();
 
-      const percentList = deltas.map(delta => {
-        if (delta.eq(0)) return 0;
-        if (positiveTotal.eq(0)) return delta.lt(0) ? -1 : 0;
-        return Decimal.clampMin(delta.div(positiveTotal), -1).toNumber();
+      const relativeImpacts = impacts.map(delta => {
+        if (delta.eq(0) || maxImpact.eq(0)) return 0;
+        return delta.div(maxImpact).toNumber();
+      });
+      this.orderedPathPercentList = directImpacts.map(delta => {
+        if (delta.eq(0) || directPathTotal.eq(0)) return 0;
+        return delta.abs().div(directPathTotal).toNumber();
       });
 
-      this.percentList = percentList;
-      this.rollingAverage.add(hasVisibleTransforms ? percentList : undefined);
+      this.percentList = relativeImpacts;
+      this.rollingAverage.add(hasVisibleTransforms ? relativeImpacts : undefined);
       this.averagedPercentList = this.rollingAverage.average;
       this.totalMultiplier = this.resource.mult;
       this.totalPositivePower = DC.D1;
+    },
+    orderedImpactDelta(index, finalMode = this.orderedFinalImpact) {
+      const data = this.entries[index].data;
+      if (!data.hasTransform || !data.isVisible) return DC.D0;
+      if (finalMode && data.transformHasFinalWithout) {
+        return this.log10ForImpact(data.transformFinalWith).sub(this.log10ForImpact(data.transformFinalWithout));
+      }
+      return this.log10ForImpact(data.transformAfter).sub(this.log10ForImpact(data.transformBefore));
+    },
+    log10ForImpact(value) {
+      return Decimal.max(value, DC.D1).log10();
+    },
+    orderedImpactStyle(index) {
+      const impact = this.averagedPercentList[index] ?? 0;
+      const iconObj = this.entries[index].icon;
+      return {
+        width: `${100 * Math.min(Math.abs(impact), 1)}%`,
+        left: impact < 0 ? undefined : 0,
+        right: impact < 0 ? 0 : undefined,
+        background: impact < 0
+          ? `repeating-linear-gradient(-45deg, var(--color-bad), ${iconObj?.color ?? "var(--color-bad)"} 0.8rem)`
+          : iconObj?.color ?? "var(--color-accent)",
+        opacity: impact === 0 ? 0 : 0.35,
+      };
+    },
+    orderedPathStyle(index) {
+      const share = this.orderedPathPercentList[index] ?? 0;
+      const directImpact = this.orderedImpactDelta(index, false);
+      const isNerf = directImpact.lt(0);
+      const iconObj = this.entries[index].icon ?? this.resource.icon;
+      return {
+        position: "absolute",
+        top: `${100 * this.orderedPathPercentList.slice(0, index).sum()}%`,
+        height: `${100 * share}%`,
+        width: "100%",
+        "transition-duration": this.isRecent(this.lastLayoutChange) ? undefined : "0.2s",
+        border: share === 0 ? "" : "0.1rem solid var(--color-text)",
+        color: iconObj?.textColor ?? "black",
+        background: isNerf
+          ? `repeating-linear-gradient(-45deg, var(--color-bad), ${iconObj?.color ?? "var(--color-bad)"} 0.8rem)`
+          : iconObj?.color ?? this.resource.icon?.color ?? "var(--color-accent)",
+      };
     },
     styleObject(index) {
       const netPerc = this.averagedPercentList.sum();
@@ -262,10 +310,11 @@ export default {
     },
     expandIconStyle(index) {
       return {
-        opacity: this.hasChildEntries(index) ? 1 : 0
+        opacity: this.hasChildEntries(index) || (this.resource.isOrdered && this.entries[index].data.hasTransform) ? 1 : 0
       };
     },
     entryString(index) {
+      if (this.resource.isOrdered) return this.orderedEntryString(index);
       const percents = this.percentList[index];
       if (percents < 0 && !nerfBlacklist.includes(this.entries[index].key)) {
         return this.nerfString(index);
@@ -285,9 +334,6 @@ export default {
       const entry = this.entries[index];
       if (!entry.data.isVisible) {
         return `${percString}: ${entry.name}`;
-      }
-      if (entry.data.hasTransform) {
-        return `${percString}: ${entry.name} ${this.transformValueString(entry)}`;
       }
       const overrideStr = entry.displayOverride;
       let valueStr;
@@ -322,13 +368,65 @@ export default {
 
       return `${percString}: ${entry.name} ${valueStr}`;
     },
+    orderedEntryString(index) {
+      const entry = this.entries[index];
+      const impact = this.percentList[index] ?? 0;
+      let impactString;
+      if (impact === 0) impactString = formatPercents(0);
+      else if (Math.abs(impact) < 0.001) {
+        impactString = `${impact < 0 ? ">-" : "<"}${formatPercents(0.001, 1)}`;
+      } else {
+        impactString = formatPercents(impact, 1);
+      }
+      const mode = this.orderedFinalImpact ? "final" : "direct";
+      return `${padPercents(impactString)} rel. (${mode}): ${entry.name} ${this.transformValueString(entry)}`;
+    },
+    transformValueString(entry) {
+      const data = entry.data;
+      if (data.transformDisplay) return `(${data.transformDisplay})`;
+
+      switch (data.transformType) {
+        case "multiply":
+          return data.transformHasValue ? `(${formatX(data.transformValue, 2, 2)})` : "";
+        case "power":
+          return data.transformHasValue ? `(${formatPow(data.transformValue, 2, 3)})` : "";
+        case "formula":
+          return `(${format(data.transformAfter, 2, 2)})`;
+        case "softcap":
+        case "hardcap":
+        case "override":
+        case "floor":
+        default:
+          return `(${format(data.transformBefore, 2, 2)} ➜ ${format(data.transformAfter, 2, 2)})`;
+      }
+    },
+    transformTypeString(entry) {
+      const labels = {
+        multiply: "Multiplier",
+        power: "Power",
+        formula: "Formula",
+        softcap: "Softcap",
+        hardcap: "Hardcap",
+        override: "Override",
+        floor: "Rounding",
+      };
+      return labels[entry.data.transformType] ?? "Transformation";
+    },
+    transformImpactString(entry, finalImpact) {
+      const data = entry.data;
+      let delta;
+      if (finalImpact && data.transformHasFinalWithout) {
+        delta = this.log10ForImpact(data.transformFinalWith).sub(this.log10ForImpact(data.transformFinalWithout));
+      } else {
+        delta = this.log10ForImpact(data.transformAfter).sub(this.log10ForImpact(data.transformBefore));
+      }
+      if (delta.eq(0)) return `${format(0, 2, 2)} OoM`;
+      const sign = delta.gt(0) ? "+" : "";
+      return `${sign}${format(delta, 2, 2)} OoM`;
+    },
     nerfString(index) {
       const entry = this.entries[index];
       const percString = padPercents(formatPercents(this.percentList[index], 1));
-
-      if (entry.data.hasTransform) {
-        return `${percString}: ${entry.name} ${this.transformValueString(entry)}`;
-      }
 
       // Display both multiplier and powers, but make sure to give an empty string if there's neither
       const overrideStr = entry.displayOverride;
@@ -353,25 +451,6 @@ export default {
       }
 
       return `${percString}: ${entry.name} ${valueStr}`;
-    },
-    transformValueString(entry) {
-      const data = entry.data;
-      if (data.transformDisplay) return `(${data.transformDisplay})`;
-
-      switch (data.transformType) {
-        case "multiply":
-          return data.transformHasValue ? `(${formatX(data.transformValue, 2, 2)})` : "";
-        case "power":
-          return data.transformHasValue ? `(${formatPow(data.transformValue, 2, 3)})` : "";
-        case "formula":
-          return `(${format(data.transformAfter, 2, 2)})`;
-        case "softcap":
-        case "hardcap":
-        case "override":
-        case "floor":
-        default:
-          return `(${format(data.transformBefore, 2, 2)} ➜ ${format(data.transformAfter, 2, 2)})`;
-      }
     },
     totalString() {
       const resource = this.resource;
@@ -426,7 +505,26 @@ export default {
 <template>
   <div :class="containerClass">
     <div
-      v-if="!isEmpty"
+      v-if="resource.isOrdered && !isEmpty"
+      class="c-stacked-bars c-ordered-path-bars"
+    >
+      <div
+        v-for="(perc, index) in orderedPathPercentList"
+        :key="50 + index"
+        :style="orderedPathStyle(index)"
+        :class="{ 'c-bar-highlight' : mouseoverIndex === index }"
+        @mouseover="mouseoverIndex = index"
+        @mouseleave="mouseoverIndex = -1"
+        @click="showGroup[index] = !showGroup[index]"
+      >
+        <span
+          class="c-bar-overlay"
+          v-html="barSymbol(index)"
+        />
+      </div>
+    </div>
+    <div
+      v-else-if="!isEmpty"
       class="c-stacked-bars"
     >
       <div
@@ -450,9 +548,26 @@ export default {
         <b>
           {{ totalString() }}
         </b>
-        <span class="c-display-settings">
+        <span
+          class="c-display-settings"
+          :class="{ 'c-ordered-display-settings': resource.isOrdered }"
+        >
+          <span
+            v-if="resource.isOrdered"
+            class="c-impact-display-label"
+          >
+            Impact
+          </span>
           <PrimaryToggleButton
-            v-if="hasSeenPowers && allowPowerToggle"
+            v-if="resource.isOrdered"
+            v-model="orderedFinalImpact"
+            v-tooltip="'Final includes amplification or reduction from later formula steps; Direct only measures this step itself'"
+            off="Direct"
+            on="Final"
+            class="o-primary-btn c-impact-display-btn"
+          />
+          <PrimaryToggleButton
+            v-else-if="hasSeenPowers && allowPowerToggle"
             v-model="replacePowers"
             v-tooltip="'Change Display for Power effects'"
             off="^N"
@@ -487,12 +602,47 @@ export default {
           v-if="shouldShowEntry(entry)"
           :class="singleEntryClass(index)"
         >
-          <div @click="showGroup[index] = !showGroup[index]">
+          <div
+            class="c-entry-click-target"
+            @click="showGroup[index] = !showGroup[index]"
+          >
             <span
-              :class="expandIcon(index)"
-              :style="expandIconStyle(index)"
+              v-if="resource.isOrdered"
+              class="c-ordered-impact-bar"
+              :style="orderedImpactStyle(index)"
             />
-            {{ entryString(index) }}
+            <span class="c-entry-text">
+              <span
+                :class="expandIcon(index)"
+                :style="expandIconStyle(index)"
+              />
+              {{ entryString(index) }}
+            </span>
+          </div>
+          <div
+            v-if="resource.isOrdered && showGroup[index] && entry.data.hasTransform"
+            class="c-ordered-transform-details"
+          >
+            <div class="c-transform-detail-grid">
+              <span>Effect type</span>
+              <b>{{ transformTypeString(entry) }}</b>
+              <span>Direct effect</span>
+              <b>{{ transformValueString(entry) || '—' }}</b>
+              <span>Before this step</span>
+              <b>{{ format(entry.data.transformBefore, 2, 2) }}</b>
+              <span>After this step</span>
+              <b>{{ format(entry.data.transformAfter, 2, 2) }}</b>
+              <span>Direct impact</span>
+              <b>{{ transformImpactString(entry, false) }}</b>
+              <template v-if="entry.data.transformHasFinalWithout">
+                <span>Final with effect</span>
+                <b>{{ format(entry.data.transformFinalWith, 2, 2) }}</b>
+                <span>Final without effect</span>
+                <b>{{ format(entry.data.transformFinalWithout, 2, 2) }}</b>
+                <span>Final impact</span>
+                <b>{{ transformImpactString(entry, true) }}</b>
+              </template>
+            </div>
           </div>
           <MultiplierBreakdownEntry
             v-if="showGroup[index] && hasChildEntries(index)"
@@ -508,11 +658,13 @@ export default {
         </div>
       </div>
       <div
-        v-if="resource.isOrdered"
-        class="c-no-effect"
+        v-if="resource.isOrdered && !isEmpty"
+        class="c-no-effect c-ordered-note"
       >
-        Ordered calculations show each step's contribution by its change in orders of magnitude.
-        Caps, softcaps, and other reductions appear as negative percentages.
+        Left bar shows the direct ordered formula path, split by absolute OoM change at each step.
+        Row bars show relative impact strength normalized to the largest absolute effect on this page; they are not
+        contribution shares and do not add up to {{ formatPercents(1) }}.
+        Final Impact includes all later formula steps; Direct Impact only measures the selected step itself.
       </div>
       <div
         v-if="resource.key === 'AD_total'"
@@ -560,6 +712,10 @@ export default {
   margin-right: 1.5rem;
 }
 
+.c-ordered-path-bars {
+  min-width: 5rem;
+}
+
 .c-bar-overlay {
   display: flex;
   width: 100%;
@@ -602,6 +758,24 @@ export default {
   width: 8rem;
 }
 
+.c-ordered-display-settings {
+  justify-content: flex-end;
+  align-items: center;
+  width: auto;
+  min-width: 17rem;
+}
+
+.c-impact-display-label {
+  margin-right: 0.6rem;
+  color: var(--color-text);
+  font-size: 1.1rem;
+}
+
+.c-impact-display-btn {
+  min-width: 7rem;
+  margin: 0 0.5rem;
+}
+
 .c-change-display-btn {
   display: flex;
   justify-content: center;
@@ -626,6 +800,7 @@ export default {
 }
 
 .c-single-entry {
+  position: relative;
   text-align: left;
   color: var(--color-text);
   padding: 0.2rem 0.5rem;
@@ -633,6 +808,52 @@ export default {
   border: 0.1rem dashed;
   cursor: pointer;
   user-select: none;
+  overflow: hidden;
+}
+
+.c-entry-click-target {
+  position: relative;
+  min-height: 1.8rem;
+}
+
+.c-entry-text {
+  position: relative;
+  z-index: 1;
+}
+
+.c-ordered-impact-bar {
+  position: absolute;
+  top: -0.2rem;
+  bottom: -0.2rem;
+  z-index: 0;
+  pointer-events: none;
+  transition: width 0.2s ease;
+}
+
+.c-ordered-transform-details {
+  position: relative;
+  z-index: 1;
+  margin: 0.5rem 1.5rem 0.3rem;
+  padding: 0.8rem 1rem;
+  border: 0.1rem dashed var(--color-text);
+  background-color: var(--color-base);
+  cursor: default;
+}
+
+.c-transform-detail-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 1.2rem;
+  align-items: baseline;
+}
+
+.c-transform-detail-grid b {
+  overflow-wrap: anywhere;
+}
+
+.c-ordered-note {
+  margin: 0.8rem 0.5rem 0;
+  font-size: 1.05rem;
 }
 
 .c-single-entry-highlight {

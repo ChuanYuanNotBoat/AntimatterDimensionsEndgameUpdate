@@ -33,7 +33,10 @@ export class BreakdownEntryInfo {
       transformAfter: new Decimal(1),
       transformValue: new Decimal(1),
       transformHasValue: false,
-      transformDisplay: ""
+      transformDisplay: "",
+      transformFinalWith: new Decimal(1),
+      transformFinalWithout: new Decimal(1),
+      transformHasFinalWithout: false
     });
   }
 
@@ -52,6 +55,9 @@ export class BreakdownEntryInfo {
       this.data.transformHasValue = transform.value !== null;
       this.data.transformValue.fromDecimal(transform.value ?? DC.D1);
       this.data.transformDisplay = transform.display;
+      this.data.transformFinalWith.fromDecimal(transform.finalWith ?? transform.after);
+      this.data.transformHasFinalWithout = transform.finalWithout !== null;
+      this.data.transformFinalWithout.fromDecimal(transform.finalWithout ?? transform.after);
     } else {
       this.data.transformType = "";
       this.data.transformBefore.fromDecimal(DC.D1);
@@ -59,6 +65,9 @@ export class BreakdownEntryInfo {
       this.data.transformHasValue = false;
       this.data.transformValue.fromDecimal(DC.D1);
       this.data.transformDisplay = "";
+      this.data.transformFinalWith.fromDecimal(DC.D1);
+      this.data.transformFinalWithout.fromDecimal(DC.D1);
+      this.data.transformHasFinalWithout = false;
     }
 
     if (isVisible) {
@@ -92,6 +101,8 @@ export class BreakdownEntryInfo {
       value: raw.value === undefined || raw.value === null ? null : new Decimal(raw.value),
       display: raw.display ?? "",
       alwaysShow: raw.alwaysShow ?? false,
+      finalWith: raw.finalWith === undefined || raw.finalWith === null ? null : new Decimal(raw.finalWith),
+      finalWithout: raw.finalWithout === undefined || raw.finalWithout === null ? null : new Decimal(raw.finalWithout),
     };
   }
 

@@ -40,7 +40,7 @@ export const tickspeed = {
   },
   upgrades: {
     name: "Tickspeed Upgrades",
-    displayOverride: () => `${format(Tickspeed.totalUpgrades, 2, 2)} Total`,
+    displayOverride: () => `${format(Tickspeed.totalUpgrades, 2, 0)} Total`,
     multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().tickspeed),
     isActive: true,
     icon: MultiplierTabIcons.PURCHASE("AD"),
@@ -70,14 +70,14 @@ export const tickspeedUpgrades = {
     name: "Purchased Tickspeed Upgrades",
     displayOverride: () => (Laitela.continuumActive
       ? formatFloat(Tickspeed.continuumValue, 2, 2)
-      : formatInt(player.totalTickBought)),
+      : format(player.totalTickBought, 2, 0)),
     multValue: () => Decimal.pow10(Laitela.continuumActive ? Tickspeed.continuumValue : player.totalTickBought),
     isActive: () => true,
     icon: MultiplierTabIcons.PURCHASE("AD"),
   },
   free: {
     name: "Tickspeed Upgrades from TD",
-    displayOverride: () => formatInt(player.totalTickGained),
+    displayOverride: () => format(player.totalTickGained, 2, 0),
     multValue: () => Decimal.pow10(player.totalTickGained),
     isActive: () => Currency.timeShards.gt(0),
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("time"),

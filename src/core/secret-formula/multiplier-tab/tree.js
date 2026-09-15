@@ -16,7 +16,10 @@ const propList = {
     "achievement", "infinityUpgrade", "dilationUpgrade", "glyph", "alchemy", "nullUpgrade", "nerfTeresa", "nerfV",
     "nerfLaitela", "glyphPower", "endgameMastery141", "alphaPower", "alphaStageNerf", "alphaECNerf",
     "replicantiSurge", "ascensionIPPower", "ipSurge", "floor", "traceMismatch"],
-  EP: ["base", "eternityUpgrade", "timeStudy", "glyph", "realityUpgrade", "pelle", "iap", "nerfTeresa", "nerfV"],
+  EP: ["base", "divisor", "powerCompensation", "eternityUpgrade", "timeStudy", "glyph", "cursedGlyph",
+    "pelleGlyph", "realityUpgrade", "pelle", "iap", "alphaTimeStudy", "nullUpgrade", "nerfTeresa", "nerfV",
+    "nerfLaitela", "glyphPower", "endgameMastery142", "raPower", "achievement232", "alphaEC10Nerf",
+    "alphaTD8Nerf", "ascensionEPPower", "alphaHardcap", "epSurge", "floor", "traceMismatch"],
 };
 
 // Some of the props above would contain every entry except "total" in their respective value GameDB entry, so we
@@ -74,7 +77,7 @@ export const multiplierTabTree = {
     getProps("EP")
   ],
   EP_base: [
-    ["EP_IP", "EP_divisor"]
+    ["EP_IP"]
   ],
   TP_total: [
     getProps("TP")

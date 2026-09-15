@@ -15,6 +15,7 @@ export const IP = {
     isActive: () => PlayerProgress.infinityUnlocked() || Player.canCrunch,
     isOrdered: true,
     overlay: ["∞", "<i class='fa-solid fa-layer-group' />"],
+    icon: { symbol: "<b>∞</b>", color: "var(--color-infinity)" },
   },
   base: {
     name: "Base Infinity Points",
