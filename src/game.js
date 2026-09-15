@@ -1089,7 +1089,7 @@ export function gameLoop(passedDiff, options = {}) {
   // dilation, but the TP gain function is also coded to behave differently if it's active
   const teresa1 = player.dilation.active && (Ra.unlocks.autoTP.canBeApplied || EndgameMilestone.startRa.isReached);
   const teresa25 = !isInCelestialReality() && Ra.unlocks.unlockDilationStartingTP.canBeApplied;
-  if ((teresa1 || teresa25) && !Pelle.isDoomed && !player.disablePostReality) rewardTP();
+  if (false && (teresa1 || teresa25) && !Pelle.isDoomed && !player.disablePostReality) rewardTP();
 
   if (DivinityMilestone.divineDimensions.isReached && Pelle.isDoomed) {
     player.celestials.pelle.remnants = player.celestials.pelle.remnants.add(Decimal.max(Pelle.remnantsGain, 0));
