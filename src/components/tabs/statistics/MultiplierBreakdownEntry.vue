@@ -89,6 +89,7 @@ export default {
     // to tickspeed/galaxies because we already mostly hack those with fake values and should thus not allow those
     // to be changed either.
     allowPowerToggle() {
+      if (this.resource.isOrdered) return false;
       const forbiddenEntries = ["AD_infinityPower", "galaxies", "tickspeed"];
       // Uses startsWith instead of String equality since it has to match both the top-level entry and any
       // related children entries further down the tree.
@@ -133,6 +134,11 @@ export default {
       this.update();
     },
     calculatePercents() {
+      if (this.resource.isOrdered) {
+        this.calculateOrderedPercents();
+        return;
+      }
+
       const powList = this.entries.map(e => new Decimal(e.data.pow));
       const totalPosPow = powList.filter(p => p.gt(1)).reduce((x, y) => x.times(y), DC.D1);
       const totalNegPow = powList.filter(p => p.lt(1)).reduce((x, y) => x.times(y), DC.D1);
@@ -187,6 +193,35 @@ export default {
       this.averagedPercentList = this.rollingAverage.average;
       this.totalMultiplier = Decimal.pow10(log10Mult);
       this.totalPositivePower = totalPosPow;
+    },
+    calculateOrderedPercents() {
+      // Ordered resources contain transformations which are not generally commutative. Instead of trying to rewrite
+      // hardcaps/softcaps/powers as equivalent multipliers, measure each step by the amount it changes log10(value).
+      // Positive steps are normalized to 100%; negative steps show how much of that positive growth they remove.
+      const deltas = this.entries.map(entry => {
+        if (!entry.data.hasTransform || !entry.data.isVisible) return DC.D0;
+        const before = Decimal.max(entry.data.transformBefore, DC.D1).log10();
+        const after = Decimal.max(entry.data.transformAfter, DC.D1).log10();
+        return after.sub(before);
+      });
+      const positiveTotal = deltas
+        .filter(delta => delta.gt(0))
+        .reduce((sum, delta) => sum.add(delta), DC.D0);
+
+      const hasVisibleTransforms = this.entries.some(entry => entry.data.hasTransform && entry.data.isVisible);
+      if (hasVisibleTransforms) this.lastNotEmptyAt = Date.now();
+
+      const percentList = deltas.map(delta => {
+        if (delta.eq(0)) return 0;
+        if (positiveTotal.eq(0)) return delta.lt(0) ? -1 : 0;
+        return Decimal.clampMin(delta.div(positiveTotal), -1).toNumber();
+      });
+
+      this.percentList = percentList;
+      this.rollingAverage.add(hasVisibleTransforms ? percentList : undefined);
+      this.averagedPercentList = this.rollingAverage.average;
+      this.totalMultiplier = this.resource.mult;
+      this.totalPositivePower = DC.D1;
     },
     styleObject(index) {
       const netPerc = this.averagedPercentList.sum();
@@ -251,6 +286,9 @@ export default {
       if (!entry.data.isVisible) {
         return `${percString}: ${entry.name}`;
       }
+      if (entry.data.hasTransform) {
+        return `${percString}: ${entry.name} ${this.transformValueString(entry)}`;
+      }
       const overrideStr = entry.displayOverride;
       let valueStr;
       if (overrideStr) valueStr = `(${overrideStr})`;
@@ -288,6 +326,10 @@ export default {
       const entry = this.entries[index];
       const percString = padPercents(formatPercents(this.percentList[index], 1));
 
+      if (entry.data.hasTransform) {
+        return `${percString}: ${entry.name} ${this.transformValueString(entry)}`;
+      }
+
       // Display both multiplier and powers, but make sure to give an empty string if there's neither
       const overrideStr = entry.displayOverride;
       let valueStr;
@@ -311,6 +353,25 @@ export default {
       }
 
       return `${percString}: ${entry.name} ${valueStr}`;
+    },
+    transformValueString(entry) {
+      const data = entry.data;
+      if (data.transformDisplay) return `(${data.transformDisplay})`;
+
+      switch (data.transformType) {
+        case "multiply":
+          return data.transformHasValue ? `(${formatX(data.transformValue, 2, 2)})` : "";
+        case "power":
+          return data.transformHasValue ? `(${formatPow(data.transformValue, 2, 3)})` : "";
+        case "formula":
+          return `(${format(data.transformAfter, 2, 2)})`;
+        case "softcap":
+        case "hardcap":
+        case "override":
+        case "floor":
+        default:
+          return `(${format(data.transformBefore, 2, 2)} ➜ ${format(data.transformAfter, 2, 2)})`;
+      }
     },
     totalString() {
       const resource = this.resource;
@@ -445,6 +506,13 @@ export default {
             {{ dilationString() }}
           </div>
         </div>
+      </div>
+      <div
+        v-if="resource.isOrdered"
+        class="c-no-effect"
+      >
+        Ordered calculations show each step's contribution by its change in orders of magnitude.
+        Caps, softcaps, and other reductions appear as negative percentages.
       </div>
       <div
         v-if="resource.key === 'AD_total'"

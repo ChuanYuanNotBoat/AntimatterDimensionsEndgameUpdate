@@ -12,8 +12,10 @@ const propList = {
     "eternityChallenge", "glyph", "alchemy", "imaginaryUpgrade", "pelle", "iap", "nerfV", "nerfCursed", "nerfPelle"],
   TD: ["purchase", "achievementMult", "achievement", "timeStudy", "eternityUpgrade", "eternityChallenge",
     "dilationUpgrade", "realityUpgrade", "glyph", "alchemy", "imaginaryUpgrade", "pelle", "iap", "nerfV", "nerfCursed"],
-  IP: ["base", "infinityUpgrade", "achievement", "timeStudy", "dilationUpgrade", "glyph", "alchemy", "pelle", "iap",
-    "nerfTeresa", "nerfV"],
+  IP: ["base", "divisor", "powerCompensation", "effarigCap", "pelle", "pelleGlyph", "iap", "timeStudy",
+    "achievement", "infinityUpgrade", "dilationUpgrade", "glyph", "alchemy", "nullUpgrade", "nerfTeresa", "nerfV",
+    "nerfLaitela", "glyphPower", "endgameMastery141", "alphaPower", "alphaStageNerf", "alphaECNerf",
+    "replicantiSurge", "ascensionIPPower", "ipSurge", "floor", "traceMismatch"],
   EP: ["base", "eternityUpgrade", "timeStudy", "glyph", "realityUpgrade", "pelle", "iap", "nerfTeresa", "nerfV"],
 };
 
@@ -66,7 +68,7 @@ export const multiplierTabTree = {
     getProps("IP")
   ],
   IP_base: [
-    ["IP_antimatter", "IP_divisor"]
+    ["IP_antimatter"]
   ],
   EP_total: [
     getProps("EP")
