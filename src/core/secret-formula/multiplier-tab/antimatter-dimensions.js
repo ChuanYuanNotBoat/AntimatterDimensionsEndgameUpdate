@@ -63,7 +63,7 @@ export const AD = {
     multValue: dim => {
       const getPurchases = ad => (Laitela.continuumActive
         ? AntimatterDimension(ad).continuumValue
-        : Math.floor(AntimatterDimension(ad).bought / 10)
+        : AntimatterDimension(ad).bought.div(10).floor()
       );
       if (dim) return Decimal.pow(AntimatterDimensions.buyTenMultiplier, getPurchases(dim));
       return AntimatterDimensions.all

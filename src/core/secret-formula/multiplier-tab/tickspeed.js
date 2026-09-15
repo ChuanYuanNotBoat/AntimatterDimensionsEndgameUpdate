@@ -18,7 +18,7 @@ export const tickspeed = {
     multValue: () => Tickspeed.perSecond.pow(MultiplierTabHelper.activeDimCount("AD")),
     // No point in showing this breakdown at all unless both components are nonzero; however they will always be nonzero
     // due to the way the calculation works, so we have to manually hide it here
-    isActive: () => Tickspeed.perSecond.gt(1) && effectiveBaseGalaxies() > 0,
+    isActive: () => Tickspeed.perSecond.gt(1) && effectiveBaseGalaxies().gt(0),
     dilationEffect: () => (Effarig.isRunning ? Effarig.tickDilation : 1),
     overlay: ["<i class='fa-solid fa-clock' />"],
     icon: MultiplierTabIcons.TICKSPEED,
@@ -48,10 +48,10 @@ export const tickspeed = {
   galaxies: {
     name: "Galaxies",
     displayOverride: () => {
-      const ag = player.galaxies + GalaxyGenerator.galaxies;
+      const ag = player.galaxies.add(GalaxyGenerator.galaxies);
       const rg = Replicanti.galaxies.total;
       const tg = player.dilation.totalTachyonGalaxies;
-      return `${formatInt(ag + rg + tg)} Total`;
+      return `${formatInt(ag.add(rg).add(tg))} Total`;
     },
     multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().galaxies),
     isActive: true,

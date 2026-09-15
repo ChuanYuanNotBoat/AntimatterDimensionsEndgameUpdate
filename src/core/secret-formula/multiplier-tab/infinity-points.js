@@ -22,7 +22,7 @@ export const IP = {
     fakeValue: DC.D5,
     multValue: () => {
       const div = Effects.min(308, Achievement(103), TimeStudy(111));
-      return Decimal.pow10(player.records.thisInfinity.maxAM.log10() / div - 0.75);
+      return Decimal.pow10(player.records.thisInfinity.maxAM.log10().div(div).sub(0.75));
     },
     isActive: () => player.break,
     icon: MultiplierTabIcons.CONVERT_FROM("AM"),

@@ -38,7 +38,7 @@ export const ID = {
     name: dim => (dim ? `Purchased ID ${dim}` : "Purchases"),
     multValue: dim => {
       const getMult = id => Decimal.pow(InfinityDimension(id).powerMultiplier,
-        Math.floor(InfinityDimension(id).baseAmount / 10));
+        InfinityDimension(id).baseAmount.div(10).floor());
       if (dim) return getMult(dim);
       return InfinityDimensions.all
         .filter(id => id.isProducing)
@@ -63,9 +63,10 @@ export const ID = {
     name: "Base purchases",
     multValue: dim => {
       const getMult = id => {
+        const rawPurchases = InfinityDimension(id).baseAmount.div(10).floor();
         const purchases = id === 8
-          ? Math.floor(InfinityDimension(id).baseAmount / 10)
-          : Math.min(InfinityDimensions.HARDCAP_PURCHASES, Math.floor(InfinityDimension(id).baseAmount / 10));
+          ? rawPurchases
+          : Decimal.min(InfinityDimensions.HARDCAP_PURCHASES, rawPurchases);
         const baseMult = InfinityDimension(id)._powerMultiplier;
         return Decimal.pow(baseMult, purchases);
       };
@@ -83,9 +84,9 @@ export const ID = {
     multValue: dim => {
       const getMult = id => {
         if (id === 8) return DC.D1;
-        const purchases = Math.floor(InfinityDimension(id).baseAmount / 10);
+        const purchases = InfinityDimension(id).baseAmount.div(10).floor();
         return Decimal.pow(InfinityDimension(id)._powerMultiplier,
-          Math.clampMin(purchases - InfinityDimensions.HARDCAP_PURCHASES, 0));
+          purchases.sub(InfinityDimensions.HARDCAP_PURCHASES).clampMin(0));
       };
       if (dim) return getMult(dim);
       return InfinityDimensions.all
@@ -99,9 +100,9 @@ export const ID = {
   infinityGlyphSacrifice: {
     name: "Infinity Glyph sacrifice",
     multValue: () => (InfinityDimension(8).isProducing
-      ? Decimal.pow(GlyphSacrifice.infinity.effectValue, Math.floor(InfinityDimension(8).baseAmount / 10))
+      ? Decimal.pow(GlyphSacrifice.infinity.effectValue, InfinityDimension(8).baseAmount.div(10).floor())
       : DC.D1),
-    isActive: () => GlyphSacrifice.infinity.effectValue > 1,
+    isActive: () => GlyphSacrifice.infinity.effectValue.gt(1),
     icon: MultiplierTabIcons.SACRIFICE("infinity"),
   },
   powPurchase: {

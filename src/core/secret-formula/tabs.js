@@ -135,7 +135,7 @@ export const tabs = [
         name: "Multiplier Breakdown",
         symbol: "<i class='fas fa-calculator'></i>",
         component: "MultiplierBreakdownTab",
-        condition: () => false && (PlayerProgress.endgameUnlocked() || PlayerProgress.infinityUnlocked()),
+        condition: () => PlayerProgress.infinityUnlocked(),
         id: 3,
         hidable: true,
       },

@@ -14,7 +14,7 @@ export const AM = {
     powValue: () => {
       const ad1 = AntimatterDimension(1);
       const baseProd = ad1.totalAmount.times(ad1.multiplier).times(Tickspeed.perSecond);
-      return Math.pow(baseProd.log10(), getAdjustedGlyphEffect("effarigantimatter") - 1);
+      return baseProd.log10().pow(getAdjustedGlyphEffect("effarigantimatter") - 1).toNumber();
     },
     isActive: () => getAdjustedGlyphEffect("effarigantimatter") > 1 && AntimatterDimension(1).isProducing,
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("effarig"),

@@ -39,41 +39,43 @@ export const MultiplierTabHelper = {
     const effects = this.globalGalaxyMult();
 
     let galFrac, tickFrac;
-    if (effectiveCount < 3) {
+    if (effectiveCount.lt(3)) {
       let baseMult = 1.1245;
-      if (player.galaxies === 1) baseMult = 1.11888888;
-      if (player.galaxies === 2) baseMult = 1.11267177;
+      if (player.galaxies.eq(1)) baseMult = 1.11888888;
+      if (player.galaxies.eq(2)) baseMult = 1.11267177;
       if (NormalChallenge(5).isRunning) {
         baseMult = 1.08;
-        if (player.galaxies === 1) baseMult = 1.07632;
-        if (player.galaxies === 2) baseMult = 1.072;
+        if (player.galaxies.eq(1)) baseMult = 1.07632;
+        if (player.galaxies.eq(2)) baseMult = 1.072;
       }
       // This is needed for numerical consistency with the other conditional case
       baseMult /= 0.965 ** 2;
       const logBase = Math.log10(baseMult);
 
       const perGalaxy = 0.02 * effects;
-      effectiveCount *= Pelle.specialGlyphEffect.power;
+      effectiveCount = effectiveCount.times(Pelle.specialGlyphEffect.power);
 
-      tickFrac = Tickspeed.totalUpgrades * logBase;
-      galFrac = -Math.log10(Math.max(0.01, 1 / baseMult - (effectiveCount * perGalaxy))) / logBase;
+      tickFrac = Tickspeed.totalUpgrades.times(logBase);
+      galFrac = Decimal.max(0.01, new Decimal(1 / baseMult).sub(effectiveCount.times(perGalaxy)))
+        .log10().neg().div(logBase);
     } else {
-      effectiveCount -= 2;
-      effectiveCount *= effects;
-      effectiveCount *= getAdjustedGlyphEffect("realitygalaxies") * (1 + ImaginaryUpgrade(9).effectOrDefault(0));
-      effectiveCount *= Pelle.specialGlyphEffect.power;
+      effectiveCount = effectiveCount.sub(2)
+        .times(effects)
+        .times(getAdjustedGlyphEffect("realitygalaxies"))
+        .times(1 + ImaginaryUpgrade(9).effectOrDefault(0))
+        .times(Pelle.specialGlyphEffect.power);
 
       // These all need to be framed as INCREASING x/sec tick rate (ie. all multipliers > 1, all logs > 0)
       const baseMult = 0.965 ** 2 / (NormalChallenge(5).isRunning ? 0.83 : 0.8);
       const logBase = Math.log10(baseMult);
       const logPerGalaxy = -DC.D0_965.log10().toNumber();
 
-      tickFrac = Tickspeed.totalUpgrades * logBase;
-      galFrac = (1 + effectiveCount / logBase * logPerGalaxy);
+      tickFrac = Tickspeed.totalUpgrades.times(logBase);
+      galFrac = effectiveCount.div(logBase).times(logPerGalaxy).add(1);
     }
 
     // Artificially inflate the galaxy portion in order to make the breakdown closer to 50/50 in common situations
-    galFrac *= 3;
+    galFrac = galFrac.times(3);
 
     // Calculate what proportion base tickspeed takes out of the entire tickspeed multiplier
     const base = DC.D1.dividedByEffectsOf(
@@ -86,18 +88,18 @@ export const MultiplierTabHelper = {
 
     // We want to make sure to zero out components in some edge cases
     if (base.eq(1)) baseFrac = 0;
-    if (effectiveCount === 0) galFrac = 0;
+    if (effectiveCount.eq(0)) galFrac = DC.D0;
 
     // Normalize the sum by splitting tickspeed and galaxies across what's leftover besides the base value. These three
     // values must be scaled so that they sum to 1 and none are negative
-    let factor = (1 - baseFrac) / (tickFrac + galFrac);
+    let factor = new Decimal(1 - baseFrac).div(tickFrac.add(galFrac));
     // The actual base tickspeed calculation multiplies things in a different order, which can lead to precision issues
     // when no tickspeed upgrades have been bought if we don't explicitly set this to zero
-    if (Tickspeed.totalUpgrades === 0) factor = 0;
+    if (Tickspeed.totalUpgrades.eq(0)) factor = DC.D0;
     return {
       base: baseFrac,
-      tickspeed: tickFrac * factor,
-      galaxies: galFrac * factor,
+      tickspeed: tickFrac.times(factor).toNumber(),
+      galaxies: galFrac.times(factor).toNumber(),
     };
   },
 
@@ -182,14 +184,17 @@ export const MultiplierTabHelper = {
   blackHoleSpeeds() {
     const currBH = BlackHoles.list
       .filter(bh => bh.isUnlocked)
-      .map(bh => (bh.isActive ? bh.power : 1))
-      .reduce((x, y) => x * y, 1);
+      .map(bh => (bh.isActive ? bh.power : DC.D1))
+      .reduce((x, y) => x.times(y), DC.D1);
 
     // Calculate an average black hole speedup factor
     const bh1 = BlackHole(1);
     const bh2 = BlackHole(2);
-    const avgBH = 1 + (bh1.isUnlocked ? bh1.dutyCycle * (bh1.power - 1) : 0) +
-        (bh2.isUnlocked ? bh1.dutyCycle * bh2.dutyCycle * bh1.power * (bh2.power - 1) : 0);
+    const avgBH = DC.D1
+      .plus(bh1.isUnlocked ? bh1.power.sub(1).times(bh1.dutyCycle) : 0)
+      .plus(bh2.isUnlocked
+        ? bh2.power.sub(1).times(bh1.power).times(bh1.dutyCycle * bh2.dutyCycle)
+        : 0);
 
     return {
       current: currBH,

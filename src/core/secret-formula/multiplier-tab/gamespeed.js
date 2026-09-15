@@ -16,9 +16,9 @@ export const gamespeed = {
 
       const avgSpeed = Enslaved.isAutoReleasing
         ? getGameSpeedupForDisplay()
-        : curr / currBH * avgBH;
+        : curr.div(currBH).times(avgBH);
       const avgString = ` (current) | ${formatX(avgSpeed, 2, 2)} (average)`;
-      return `${formatX(curr, 2, 2)}${curr === avgSpeed ? "" : avgString}`;
+      return `${formatX(curr, 2, 2)}${curr.eq(avgSpeed) ? "" : avgString}`;
     },
     multValue: () => getGameSpeedupForDisplay(),
     isActive: () => PlayerProgress.seenAlteredSpeed(),
@@ -55,7 +55,7 @@ export const gamespeed = {
   pulsing: {
     name: "Auto-Discharging Stored Time",
     multValue: () => (Enslaved.isAutoReleasing
-      ? Math.max(Enslaved.autoReleaseSpeed / getGameSpeedupFactor(), 1)
+      ? Decimal.max(Enslaved.autoReleaseSpeed.div(getGameSpeedupFactor()), 1)
       : getGameSpeedupFactor()),
     isActive: () => Enslaved.canRelease() && Enslaved.isAutoReleasing && !EternityChallenge(12).isRunning,
     icon: MultiplierTabIcons.BH_PULSE,
@@ -75,7 +75,7 @@ export const gamespeed = {
 
   ec12: {
     name: "Eternity Challenge 12",
-    multValue: () => 0.001 / getGameSpeedupForDisplay(),
+    multValue: () => new Decimal(0.001).div(getGameSpeedupForDisplay()),
     isActive: () => EternityChallenge(12).isRunning,
     icon: MultiplierTabIcons.CHALLENGE("eternity"),
   },
@@ -94,7 +94,7 @@ export const gamespeed = {
   },
   nerfLaitela: {
     name: "Lai'tela's Reality",
-    powValue: () => Math.clampMax(Time.thisRealityRealTime.totalMinutes / 10, 1),
+    powValue: () => Time.thisRealityRealTime.totalMinutes.div(10).clampMax(1).toNumber(),
     isActive: () => Laitela.isRunning,
     icon: MultiplierTabIcons.GENERIC_LAITELA,
   }

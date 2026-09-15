@@ -136,16 +136,16 @@ export default {
       const powList = this.entries.map(e => e.data.pow);
       const totalPosPow = powList.filter(p => p > 1).reduce((x, y) => x * y, 1);
       const totalNegPow = powList.filter(p => p < 1).reduce((x, y) => x * y, 1);
-      const log10Mult = (this.resource.fakeValue ?? this.resource.mult).log10() / totalPosPow;
-      const isEmpty = log10Mult === 0;
+      const log10Mult = (this.resource.fakeValue ?? this.resource.mult).log10().div(totalPosPow);
+      const isEmpty = log10Mult.eq(0);
       if (!isEmpty) {
         this.lastNotEmptyAt = Date.now();
       }
       let percentList = [];
       for (const entry of this.entries) {
-        const multFrac = log10Mult === 0
+        const multFrac = isEmpty
           ? 0
-          : Decimal.log10(entry.data.mult) / log10Mult;
+          : Decimal.log10(entry.data.mult).div(log10Mult).toNumber();
         const powFrac = totalPosPow === 1 ? 0 : Math.log(entry.data.pow) / Math.log(totalPosPow);
 
         // Handle nerf powers differently from everything else in order to render them with the correct bar percentage
@@ -315,7 +315,7 @@ export default {
         : `${name}: ${formatX(val, 2, 2)}`;
     },
     applyDilationExp(value, exp) {
-      return Decimal.pow10(value.log10() ** exp);
+      return Decimal.pow10(value.log10().pow(exp));
     },
     dilationString() {
       const resource = this.resource;
