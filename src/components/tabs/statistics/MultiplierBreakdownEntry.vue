@@ -133,9 +133,9 @@ export default {
       this.update();
     },
     calculatePercents() {
-      const powList = this.entries.map(e => e.data.pow);
-      const totalPosPow = powList.filter(p => p > 1).reduce((x, y) => x * y, 1);
-      const totalNegPow = powList.filter(p => p < 1).reduce((x, y) => x * y, 1);
+      const powList = this.entries.map(e => new Decimal(e.data.pow));
+      const totalPosPow = powList.filter(p => p.gt(1)).reduce((x, y) => x.times(y), DC.D1);
+      const totalNegPow = powList.filter(p => p.lt(1)).reduce((x, y) => x.times(y), DC.D1);
       const log10Mult = (this.resource.fakeValue ?? this.resource.mult).log10().div(totalPosPow);
       const isEmpty = log10Mult.eq(0);
       if (!isEmpty) {
@@ -143,20 +143,21 @@ export default {
       }
       let percentList = [];
       for (const entry of this.entries) {
-        const multFrac = isEmpty
-          ? 0
-          : Decimal.log10(entry.data.mult).div(log10Mult).toNumber();
-        const powFrac = totalPosPow === 1 ? 0 : Math.log(entry.data.pow) / Math.log(totalPosPow);
+        const pow = new Decimal(entry.data.pow);
+        const multFrac = isEmpty ? DC.D0 : Decimal.log10(entry.data.mult).div(log10Mult);
+        const powFrac = totalPosPow.eq(1) ? DC.D0 : pow.log10().div(totalPosPow.log10());
 
         // Handle nerf powers differently from everything else in order to render them with the correct bar percentage
-        const perc = entry.data.pow >= 1
-          ? multFrac / totalPosPow + powFrac * (1 - 1 / totalPosPow)
-          : Math.log(entry.data.pow) / Math.log(totalNegPow) * (totalNegPow - 1);
+        const perc = pow.gte(1)
+          ? multFrac.div(totalPosPow).add(powFrac.times(DC.D1.sub(DC.D1.div(totalPosPow))))
+          : pow.log10().div(totalNegPow.log10()).times(totalNegPow.sub(1));
 
-        // This is clamped to a minimum of something that's still nonzero in order to show it at <0.1% instead of 0%
-        percentList.push(
-          [entry.ignoresNerfPowers, nerfBlacklist.includes(entry.key) ? Math.clampMin(perc, 0.0001) : perc]
-        );
+        // Keep these as Decimals until after normalization; individual contributions can be far outside Number range
+        // in Endgame even though the final percentages are always small finite values.
+        percentList.push([
+          entry.ignoresNerfPowers,
+          nerfBlacklist.includes(entry.key) ? Decimal.max(perc, 0.0001) : perc
+        ]);
       }
 
       // Shortly after a prestige, these may add up to a lot more than the base amount as production catches up. This
@@ -166,14 +167,20 @@ export default {
       // power effects already had them applied; there is support in the classes to allow for some to be affected but
       // not others. The only actual case of this occurring is V's Reality not affecting gamespeed for DT, but it was
       // cleaner to adjust the class structure instead of specifically special-casing it here
-      const totalPerc = percentList.filter(p => p[1] > 0).map(p => p[1]).sum();
-      const nerfedPerc = percentList.filter(p => p[1] > 0)
-        .reduce((x, y) => x + (y[0] ? y[1] : y[1] * totalNegPow), 0);
+      const positivePercs = percentList.filter(p => p[1].gt(0));
+      const totalPerc = positivePercs.reduce((x, y) => x.add(y[1]), DC.D0);
+      const nerfedPerc = positivePercs
+        .reduce((x, y) => x.add(y[0] ? y[1] : y[1].times(totalNegPow)), DC.D0);
       percentList = percentList.map(p => {
-        if (p[1] > 0) {
-          return (p[0] ? p[1] : p[1] * totalNegPow) / nerfedPerc;
+        if (p[1].gt(0)) {
+          if (nerfedPerc.eq(0)) return 0;
+          return (p[0] ? p[1] : p[1].times(totalNegPow)).div(nerfedPerc).toNumber();
         }
-        return Math.clampMin(p[1] * (totalPerc - nerfedPerc) / totalPerc / totalNegPow, -1);
+        if (totalPerc.eq(0) || totalNegPow.eq(0)) return Decimal.max(p[1], -1).toNumber();
+        return Decimal.max(
+          p[1].times(totalPerc.sub(nerfedPerc)).div(totalPerc).div(totalNegPow),
+          -1
+        ).toNumber();
       });
       this.percentList = percentList;
       this.rollingAverage.add(isEmpty ? undefined : percentList);
@@ -259,16 +266,18 @@ export default {
             ? format(x, 2, 2)
             : formatX(x, 2, 2);
         };
-        if (this.replacePowers && entry.data.pow !== 1) {
+        if (this.replacePowers && Decimal.neq(entry.data.pow, 1)) {
           // For replacing powers with equivalent multipliers, we calculate what the total additional multiplier
           // from ALL power effects taken together would be, and then we split up that additional multiplier
           // proportionally to this individual power's contribution to all positive powers
-          const powFrac = Math.log(entry.data.pow) / Math.log(this.totalPositivePower);
-          const equivMult = this.totalMultiplier.pow((this.totalPositivePower - 1) * powFrac);
+          const pow = new Decimal(entry.data.pow);
+          const totalPositivePower = new Decimal(this.totalPositivePower);
+          const powFrac = totalPositivePower.eq(1) ? DC.D0 : pow.log10().div(totalPositivePower.log10());
+          const equivMult = this.totalMultiplier.pow(totalPositivePower.sub(1).times(powFrac));
           values.push(formatFn(entry.data.mult.times(equivMult)));
         } else {
           if (Decimal.neq(entry.data.mult, 1)) values.push(formatFn(entry.data.mult));
-          if (entry.data.pow !== 1) values.push(formatPow(entry.data.pow, 2, 3));
+          if (Decimal.neq(entry.data.pow, 1)) values.push(formatPow(entry.data.pow, 2, 3));
         }
         valueStr = values.length === 0 ? "" : `(${values.join(", ")})`;
       }

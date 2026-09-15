@@ -63,7 +63,7 @@ export const EP = {
   glyph: {
     name: "Equipped Glyphs",
     multValue: () => DC.D1
-      .timesEffectsOf(Pelle.isDoomed ? null : GlyphEffect.epMult)
+      .times(Pelle.isDoomed ? DC.D1 : getAdjustedGlyphEffect("timeEP"))
       .times(Pelle.specialGlyphEffect.time),
     powValue: () => (GlyphAlteration.isAdded("time") ? getSecondaryGlyphEffect("timeEP") : 1),
     isActive: () => PlayerProgress.realityUnlocked(),
