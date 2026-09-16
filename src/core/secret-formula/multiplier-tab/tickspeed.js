@@ -1,85 +1,102 @@
 import { MultiplierTabHelper } from "./helper-functions";
 import { MultiplierTabIcons } from "./icons";
+import { TickspeedBreakdown } from "./tickspeed-breakdown";
 
-// See index.js for documentation
 export const tickspeed = {
   total: {
     name: "Total Tickspeed",
     displayOverride: () => {
       const tickRate = Tickspeed.perSecond;
-      const activeDims = MultiplierTabHelper.activeDimCount("AD");
-      const dimString = MultiplierTabHelper.pluralizeDimensions(activeDims);
-      return `${format(tickRate, 2, 2)}/sec on ${formatInt(activeDims)} ${dimString}
-        ➜ ${formatX(tickRate.pow(activeDims), 2, 2)}`;
+      const count = MultiplierTabHelper.activeDimCount("AD");
+      return `${format(tickRate, 2, 2)}/sec on ${formatInt(count)} producing Dimensions → ${formatX(tickRate.pow(count), 2, 2)}`;
     },
-    // This is necessary to make multValue entries from the other props scale properly, which are also all pow10
-    // due to the multiplier tab splitting up entries logarithmically
-    fakeValue: DC.E100,
     multValue: () => Tickspeed.perSecond.pow(MultiplierTabHelper.activeDimCount("AD")),
-    // No point in showing this breakdown at all unless both components are nonzero; however they will always be nonzero
-    // due to the way the calculation works, so we have to manually hide it here
     isActive: () => Tickspeed.perSecond.gt(1) && effectiveBaseGalaxies().gt(0),
-    dilationEffect: () => (Effarig.isRunning ? Effarig.tickDilation : 1),
+    isOrdered: true,
     overlay: ["<i class='fa-solid fa-clock' />"],
     icon: MultiplierTabIcons.TICKSPEED,
   },
   base: {
-    name: "Base Tickspeed from Achievements",
-    displayOverride: () => {
-      const val = DC.D1.dividedByEffectsOf(
-        Achievement(36),
-        Achievement(45),
-        Achievement(66),
-        Achievement(83)
-      );
-      return `${format(val, 2, 2)}/sec`;
-    },
-    multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().base),
-    isActive: () => [36, 45, 66, 83].some(a => Achievement(a).canBeApplied),
+    name: "Base interval and achievements",
+    transformValue: () => TickspeedBreakdown.transform("base"),
+    isActive: true,
     icon: MultiplierTabIcons.ACHIEVEMENT,
   },
-  upgrades: {
-    name: "Tickspeed Upgrades",
-    displayOverride: () => `${format(Tickspeed.totalUpgrades, 2, 0)} Total`,
-    multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().tickspeed),
-    isActive: true,
-    icon: MultiplierTabIcons.PURCHASE("AD"),
-  },
-  galaxies: {
-    name: "Galaxies",
-    displayOverride: () => {
-      const ag = player.galaxies.add(GalaxyGenerator.galaxies);
-      const rg = Replicanti.galaxies.total;
-      const tg = player.dilation.totalTachyonGalaxies;
-      return `${formatInt(ag.add(rg).add(tg))} Total`;
-    },
-    multValue: () => new Decimal.pow10(100 * MultiplierTabHelper.decomposeTickspeed().galaxies),
-    isActive: true,
-    icon: MultiplierTabIcons.GALAXY,
-  },
-  pelleTickspeedPow: {
-    name: "Tickspeed Dilation Upgrade",
-    powValue: () => DilationUpgrade.tickspeedPower.effectValue,
-    isActive: () => DilationUpgrade.tickspeedPower.canBeApplied,
-    icon: MultiplierTabIcons.UPGRADE("dilation"),
-  },
-};
-
-export const tickspeedUpgrades = {
   purchased: {
-    name: "Purchased Tickspeed Upgrades",
-    displayOverride: () => (Laitela.continuumActive
-      ? formatFloat(Tickspeed.continuumValue, 2, 2)
-      : format(player.totalTickBought, 2, 0)),
-    multValue: () => Decimal.pow10(Laitela.continuumActive ? Tickspeed.continuumValue : player.totalTickBought),
-    isActive: () => true,
+    name: "Purchased / Continuum Tickspeed upgrades",
+    transformValue: () => TickspeedBreakdown.transform("purchased"),
+    isActive: true,
     icon: MultiplierTabIcons.PURCHASE("AD"),
   },
   free: {
-    name: "Tickspeed Upgrades from TD",
-    displayOverride: () => format(player.totalTickGained, 2, 0),
+    name: "Free Tickspeed upgrades from Time Shards",
+    transformValue: () => TickspeedBreakdown.transform("free"),
+    isActive: true,
+    icon: MultiplierTabIcons.SPECIFIC_GLYPH("time"),
+  },
+  galaxies: {
+    name: "Galaxies · effective Tickspeed impact",
+    transformValue: () => TickspeedBreakdown.transform("galaxies"),
+    isActive: true,
+    isOrdered: true,
+    icon: MultiplierTabIcons.GALAXY,
+  },
+  raPower: {
+    name: "Ra - Tickspeed multiplier power",
+    transformValue: () => TickspeedBreakdown.transform("raPower"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("reality"),
+  },
+  dilationPower: {
+    name: "Dilation Upgrade - Tickspeed Power",
+    transformValue: () => TickspeedBreakdown.transform("dilationPower"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("dilation"),
+  },
+  effarig: {
+    name: "Effarig's Tickspeed override",
+    transformValue: () => TickspeedBreakdown.transform("effarig"),
+    isActive: true,
+    icon: MultiplierTabIcons.GENERIC_GLYPH,
+  },
+  dilation: {
+    name: "Dilation / Pelle strike on tick interval",
+    transformValue: () => TickspeedBreakdown.transform("dilation"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("dilation"),
+  },
+  overcharge: {
+    name: "Endgame Overcharge tick dilation",
+    transformValue: () => TickspeedBreakdown.transform("overcharge"),
+    isActive: true,
+    icon: MultiplierTabIcons.TICKSPEED,
+  },
+  dimensionExponent: {
+    name: "Producing dimension count",
+    transformValue: () => TickspeedBreakdown.transform("dimensionExponent"),
+    isActive: true,
+    icon: MultiplierTabIcons.DIMENSION("AD"),
+  },
+  traceMismatch: {
+    name: "Untracked Tickspeed formula difference",
+    transformValue: () => TickspeedBreakdown.transform("traceMismatch"),
+    isActive: true,
+    icon: MultiplierTabIcons.TICKSPEED,
+  },
+};
+
+// Retained for compatibility with any non-root tree references to the old purchase entries.
+export const tickspeedUpgrades = {
+  purchased: {
+    name: "Purchased Tickspeed Upgrades",
+    multValue: () => Decimal.pow10(Laitela.continuumActive ? Tickspeed.continuumValue : player.totalTickBought),
+    isActive: true,
+    icon: MultiplierTabIcons.PURCHASE("AD"),
+  },
+  free: {
+    name: "Free Tickspeed Upgrades",
     multValue: () => Decimal.pow10(player.totalTickGained),
     isActive: () => Currency.timeShards.gt(0),
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("time"),
-  }
+  },
 };

@@ -1,4 +1,5 @@
 import { PlayerProgress } from "../../player-progress";
+import { DilatedTimeBreakdown } from "./dilated-time-breakdown";
 
 import { MultiplierTabIcons } from "./icons";
 
@@ -10,8 +11,10 @@ import { MultiplierTabIcons } from "./icons";
 export const DT = {
   total: {
     name: "Dilated Time gain",
-    displayOverride: () => `${format(getDilationGainPerSecond().times(getGameSpeedupForDisplay()), 2, 2)}/sec`,
-    multValue: () => getDilationGainPerSecond().times(getGameSpeedupForDisplay()),
+    displayOverride: () => `${format(getDilationGainPerSecond(), 2, 2)}/sec`,
+    multValue: () => getDilationGainPerSecond(),
+    transformValue: () => DilatedTimeBreakdown.summary(),
+    isOrdered: true,
     isActive: () => PlayerProgress.realityUnlocked() ||
       (PlayerProgress.dilationUnlocked() && getDilationGainPerSecond().gt(0)),
     dilationEffect: () => (Enslaved.isRunning ? 0.85 : 1),
@@ -95,10 +98,35 @@ export const DT = {
     icon: MultiplierTabIcons.PELLE,
   },
   gamespeed: {
-    name: "Current Game speed",
-    multValue: () => getGameSpeedupForDisplay(),
-    isActive: () => getGameSpeedupForDisplay().gt(1) && getDilationGainPerSecond().neq(0),
+    name: "Game speed (Alpha Reality applies ^0.01)",
+    multValue: () => Alpha.isRunning ? getGameSpeedupForDisplay().pow(0.01) : getGameSpeedupForDisplay(),
+    isActive: () => getGameSpeedupForDisplay().neq(1) && getDilationGainPerSecond().neq(0),
     ignoresNerfPowers: true,
     icon: MultiplierTabIcons.GAMESPEED,
   },
 };
+
+// Additional sources introduced after the legacy multiplier table was written.
+// Display their exact ordered effects, including non-multiplicative transformations.
+Object.assign(DT, {
+  base: { name: "Tachyon Particle base (including Pelle Paradox)", icon: MultiplierTabIcons.TACHYON_PARTICLES },
+  pelleGlyph: { name: "Pelle special Dilation Glyph", icon: MultiplierTabIcons.PELLE },
+  replicantiGlyph: { name: "Replicanti Glyph - DT multiplier", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  nullUpgrade: { name: "Null Upgrade - Dilated Time", icon: MultiplierTabIcons.ALCHEMY },
+  enslaved: { name: "Nameless reality - nonlinear DT reduction", icon: MultiplierTabIcons.GENERIC_ENSLAVED },
+  endgameMastery: { name: "Endgame Mastery 112", icon: MultiplierTabIcons.TIME_STUDY },
+  replicantiSurge: { name: "Resurgence - Replicanti DT power", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  currencySurge: { name: "Resurgence - DT currency power", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  primarySoftcap: { name: "Primary DT gain softcap", icon: MultiplierTabIcons.TACHYON_PARTICLES },
+  traceMismatch: { name: "Untracked DT formula difference", icon: MultiplierTabIcons.TACHYON_PARTICLES },
+});
+
+// Override stale legacy calculations/gates. All row visibility and numerical
+// contributions now come from the same ordered trace used by the root.
+for (const [key, entry] of Object.entries(DT)) {
+  if (key === "total") continue;
+  entry.transformValue = () => DilatedTimeBreakdown.transform(key);
+  entry.isActive = true;
+  entry.multValue = 1;
+  entry.powValue = 1;
+}

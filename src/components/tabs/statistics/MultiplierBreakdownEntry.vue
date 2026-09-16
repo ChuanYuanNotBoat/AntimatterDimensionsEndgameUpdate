@@ -3,6 +3,9 @@ import { BreakdownEntryInfo } from "./breakdown-entry-info";
 import { getResourceEntryInfoGroups } from "./breakdown-entry-info-group";
 import { PercentageRollingAverage } from "./percentage-rolling-average";
 import PrimaryToggleButton from "@/components/PrimaryToggleButton";
+import MultiplierBreakdownTotal from "./MultiplierBreakdownTotal";
+import GameplayLimitSummary from "./GameplayLimitSummary";
+import { auditEtherealStar, starResourceForEntry } from "@/core/secret-formula/multiplier-tab/ethereal-star-audit";
 
 // A few props are special-cased because they're base values which can be less than 1, but we don't want to
 // show them as nerfs
@@ -17,7 +20,9 @@ function padPercents(percents) {
 export default {
   name: "MultiplierBreakdownEntry",
   components: {
-    PrimaryToggleButton
+    PrimaryToggleButton,
+    MultiplierBreakdownTotal,
+    GameplayLimitSummary
   },
   props: {
     resource: {
@@ -28,6 +33,10 @@ export default {
       type: Boolean,
       required: false,
       default: false,
+    },
+    depth: {
+      type: Number,
+      default: 0,
     }
   },
   data() {
@@ -35,8 +44,14 @@ export default {
       selected: 0,
       percentList: [],
       averagedPercentList: [],
+      legacyBarOffsets: [],
+      legacyBarHeights: [],
       orderedPathPercentList: [],
+      orderedPathOffsets: [],
+      orderedDirectNerfs: [],
       showGroup: [],
+      showDetails: [],
+      starAudits: {},
       hadChildEntriesAt: [],
       mouseoverIndex: -1,
       lastNotEmptyAt: 0,
@@ -49,7 +64,9 @@ export default {
       totalMultiplier: DC.D1,
       totalPositivePower: 1,
       replacePowers: player.options.multiplierTab.replacePowers,
-      orderedFinalImpact: true,
+      // Start with the exact, inexpensive step delta. Final is opt-in because
+      // it must replay the complete formula once for each visible source.
+      orderedFinalImpact: false,
       inNC12: false,
     };
   },
@@ -97,6 +114,15 @@ export default {
       // related children entries further down the tree.
       return !forbiddenEntries.some(key => this.resource.key.startsWith(key));
     },
+    isDimensionOverall() {
+      return ["AD_total", "ID_total", "TD_total"].includes(this.resource.key);
+    },
+    isDimensionRoot() {
+      return this.isRoot && /^(AD|ID|TD)_total$/.test(this.resource.key);
+    },
+    canShowFinalImpact() {
+      return this.resource.isOrdered;
+    },
   },
   watch: {
     replacePowers(newValue) {
@@ -106,40 +132,104 @@ export default {
       if (!this.resource.isOrdered) return;
       this.lastLayoutChange = Date.now();
       this.rollingAverage.clear();
-      this.calculatePercents();
+      // Switching to Final must first populate on-demand counterfactuals.
+      this.update(true);
     },
   },
+  beforeCreate() {
+    // The global UI mixin invokes update() from its created hook, BEFORE this
+    // component's created hook runs. Initialize non-reactive bookkeeping here.
+    this._lastMultiplierRefresh = -Infinity;
+    this._lastChildScan = [];
+    this._cachedChildAvailability = [];
+    this._lastStarAuditAt = -Infinity;
+  },
   created() {
-    if (this.groups.length > 1 && player.options.multiplierTab.showAltGroup) {
-      this.changeGroup();
-    }
+    if (this.groups.length > 1 && player.options.multiplierTab.showAltGroup) this.selected = 1;
   },
   methods: {
-    update() {
+    // Vue templates resolve helpers on the component instance.
+    starResourceForEntry,
+    update(force = false) {
+      const now = Date.now();
+      // Recompute just the displayed trace, not all counterfactuals. Keep the
+      // visible page near the game's UI cadence; deeper expansions get a small
+      // budget so opening a large tree does not block gameplay.
+      const interval = this.depth >= 3 ? 240 : (this.depth === 2 ? 160 :
+        (this.depth === 1 ? 100 : 80));
+      if (!force && now - this._lastMultiplierRefresh < interval) return;
       for (let i = 0; i < this.entries.length; i++) {
         const entry = this.entries[i];
-        entry.update();
-        const hasChildEntries = getResourceEntryInfoGroups(entry.key)
-          .some(group => group.hasVisibleEntries);
-        if (hasChildEntries) {
-          this.hadChildEntriesAt[i] = Date.now();
+        // Full formula replays are only needed for Final mode or an expanded
+        // row's detail panel. Direct calculations still update every refresh.
+        const starScope = this.showDetails[i] && starResourceForEntry(entry.key);
+        // The Star-specific detail uses gameplay methods, not the costly
+        // statistics counterfactual (and its synthetic eight-tier product).
+        entry.update(!this.resource.isOrdered || this.orderedFinalImpact ||
+          (Boolean(this.showDetails[i]) && !starScope));
+        if (starScope && now - this._lastStarAuditAt >= 750) {
+          // Only the open Star detail needs the gameplay counterfactual;
+          // never run it for collapsed rows or ordinary statistics refreshes.
+          const audit = auditEtherealStar(starScope.resource, starScope.tier);
+          this.$set(this.starAudits, entry.key, audit);
+          this._lastStarAuditAt = Date.now();
         }
+        const childGroups = getResourceEntryInfoGroups(entry.key);
+        // A collapsed legacy entry needs a child-visibility scan only once per second;
+        // previously every tick evaluated every descendant's entire multiplier.
+        const scan = this.showGroup[i] || now - (this._lastChildScan[i] ?? -Infinity) >= 2000;
+        if (scan) {
+          this._lastChildScan[i] = now;
+          this._cachedChildAvailability[i] = entry.isOrdered
+            ? childGroups.some(group => group.entries.length > 0)
+            : childGroups.some(group => group.hasVisibleEntries);
+        }
+        if (this._cachedChildAvailability[i]) this.hadChildEntriesAt[i] = now;
       }
       this.dilationExponent = this.resource.dilationEffect;
       this.isDilated = this.dilationExponent !== 1;
       this.calculatePercents();
+      // Measure the cooldown from the END of the computation, otherwise a
+      // slow trace causes back-to-back expensive updates on the next frame.
       this.now = Date.now();
+      this._lastMultiplierRefresh = this.now;
       this.replacePowers = player.options.multiplierTab.replacePowers && this.allowPowerToggle;
       this.inNC12 = NormalChallenge(12).isRunning;
+    },
+    toggleGroup(index) {
+      // Legacy alias for callers still treating expansion as a single action.
+      this.toggleChildren(index);
+    },
+    toggleChildren(index) {
+      // Vue 2 does not observe direct writes to previously absent array indexes.
+      this.$set(this.showGroup, index, !this.showGroup[index]);
+      this.update(true);
+    },
+    toggleDetails(index) {
+      this.$set(this.showDetails, index, !this.showDetails[index]);
+      if (starResourceForEntry(this.entries[index].key)) this._lastStarAuditAt = -Infinity;
+      this.update(true);
+    },
+    toggleBar(index) {
+      if (this.resource.isOrdered && this.entries[index]?.data?.hasTransform) {
+        this.toggleDetails(index);
+        return;
+      }
+      if (this.hasChildEntries(index)) this.toggleChildren(index);
     },
     changeGroup() {
       this.selected = (this.selected + 1) % this.groups.length;
       player.options.multiplierTab.showAltGroup = this.selected === 1;
       this.showGroup = Array.repeat(false, this.entries.length);
+      this.showDetails = Array.repeat(false, this.entries.length);
+      this.starAudits = {};
+      this._lastStarAuditAt = -Infinity;
       this.hadChildEntriesAt = Array.repeat(0, this.entries.length);
       this.lastLayoutChange = Date.now();
       this.rollingAverage.clear();
-      this.update();
+      this._lastChildScan = [];
+      this._cachedChildAvailability = [];
+      this.update(true);
     },
     calculatePercents() {
       if (this.resource.isOrdered) {
@@ -199,6 +289,18 @@ export default {
       this.percentList = percentList;
       this.rollingAverage.add(isEmpty ? undefined : percentList);
       this.averagedPercentList = this.rollingAverage.average;
+      // Precompute the legacy stacked bar positions once, instead of slicing and
+      // summing the whole prefix on every render of every nested panel.
+      const netPercent = this.averagedPercentList.reduce((sum, value) => sum + value, 0);
+      let position = 0;
+      this.legacyBarOffsets = [];
+      this.legacyBarHeights = [];
+      for (const value of this.averagedPercentList) {
+        const height = value > 0 ? value * netPercent : -value;
+        this.legacyBarOffsets.push(position);
+        this.legacyBarHeights.push(height);
+        position += height;
+      }
       this.totalMultiplier = Decimal.pow10(log10Mult);
       this.totalPositivePower = totalPosPow;
     },
@@ -222,6 +324,13 @@ export default {
         if (delta.eq(0) || directPathTotal.eq(0)) return 0;
         return delta.abs().div(directPathTotal).toNumber();
       });
+      this.orderedDirectNerfs = directImpacts.map(delta => delta.lt(0));
+      let offset = 0;
+      this.orderedPathOffsets = this.orderedPathPercentList.map(share => {
+        const currentOffset = offset;
+        offset += share;
+        return currentOffset;
+      });
 
       this.percentList = relativeImpacts;
       this.rollingAverage.add(hasVisibleTransforms ? relativeImpacts : undefined);
@@ -238,6 +347,11 @@ export default {
       return this.log10ForImpact(data.transformAfter).sub(this.log10ForImpact(data.transformBefore));
     },
     log10ForImpact(value) {
+      // Speed can genuinely be below x1 (inverted BH, storage, EC12). Clamping
+      // those values to x1 hides the magnitude and even the sign of a nerf.
+      if (this.resource.key.startsWith("gamespeed") || this.resource.key === "AM_tickRate") {
+        return Decimal.max(value, new Decimal(1e-300)).log10();
+      }
       return Decimal.max(value, DC.D1).log10();
     },
     orderedImpactStyle(index) {
@@ -255,12 +369,11 @@ export default {
     },
     orderedPathStyle(index) {
       const share = this.orderedPathPercentList[index] ?? 0;
-      const directImpact = this.orderedImpactDelta(index, false);
-      const isNerf = directImpact.lt(0);
+      const isNerf = this.orderedDirectNerfs[index] ?? false;
       const iconObj = this.entries[index].icon ?? this.resource.icon;
       return {
         position: "absolute",
-        top: `${100 * this.orderedPathPercentList.slice(0, index).sum()}%`,
+        top: `${100 * (this.orderedPathOffsets[index] ?? 0)}%`,
         height: `${100 * share}%`,
         width: "100%",
         "transition-duration": this.isRecent(this.lastLayoutChange) ? undefined : "0.2s",
@@ -272,20 +385,17 @@ export default {
       };
     },
     styleObject(index) {
-      const netPerc = this.averagedPercentList.sum();
-      const isNerf = this.averagedPercentList[index] < 0;
+      const percents = this.averagedPercentList[index] ?? 0;
       const iconObj = this.entries[index].icon;
-      const percents = this.averagedPercentList[index];
-      const barSize = perc => (perc > 0 ? perc * netPerc : -perc);
       return {
         position: "absolute",
-        top: `${100 * this.averagedPercentList.slice(0, index).map(p => barSize(p)).sum()}%`,
-        height: `${100 * barSize(percents)}%`,
+        top: `${100 * (this.legacyBarOffsets[index] ?? 0)}%`,
+        height: `${100 * (this.legacyBarHeights[index] ?? 0)}%`,
         width: "100%",
         "transition-duration": this.isRecent(this.lastLayoutChange) ? undefined : "0.2s",
         border: percents === 0 ? "" : "0.1rem solid var(--color-text)",
         color: iconObj?.textColor ?? "black",
-        background: isNerf
+        background: percents < 0
           ? `repeating-linear-gradient(-45deg, var(--color-bad), ${iconObj?.color} 0.8rem)`
           : iconObj?.color,
       };
@@ -308,9 +418,17 @@ export default {
     expandIcon(index) {
       return this.showGroup[index] ? "far fa-minus-square" : "far fa-plus-square";
     },
+    detailIcon(index) {
+      return this.showDetails[index] ? "fas fa-times-circle" : "fas fa-info-circle";
+    },
     expandIconStyle(index) {
       return {
-        opacity: this.hasChildEntries(index) || (this.resource.isOrdered && this.entries[index].data.hasTransform) ? 1 : 0
+        opacity: this.hasChildEntries(index) ? 1 : 0
+      };
+    },
+    detailIconStyle(index) {
+      return {
+        opacity: this.resource.isOrdered && this.entries[index].data.hasTransform ? 1 : 0
       };
     },
     entryString(index) {
@@ -379,10 +497,14 @@ export default {
         impactString = formatPercents(impact, 1);
       }
       const mode = this.orderedFinalImpact ? "final" : "direct";
-      return `${padPercents(impactString)} rel. (${mode}): ${entry.name} ${this.transformValueString(entry)}`;
+      const pathShare = this.resource.key === "tickspeed_total" && entry.key === "tickspeed_galaxies"
+        ? ` | ${formatPercents(this.orderedPathPercentList[index] ?? 0, 1)} of Direct path`
+        : "";
+      return `${padPercents(impactString)} rel. (${mode})${pathShare}: ${entry.name} ${this.transformValueString(entry)}`;
     },
     transformValueString(entry) {
       const data = entry.data;
+      if (data.transformAggregate) return "";
       if (data.transformDisplay) return `(${data.transformDisplay})`;
 
       switch (data.transformType) {
@@ -401,6 +523,7 @@ export default {
       }
     },
     transformTypeString(entry) {
+      if (entry.data.transformAggregate) return "Aggregate";
       const labels = {
         multiply: "Multiplier",
         power: "Power",
@@ -515,7 +638,7 @@ export default {
         :class="{ 'c-bar-highlight' : mouseoverIndex === index }"
         @mouseover="mouseoverIndex = index"
         @mouseleave="mouseoverIndex = -1"
-        @click="showGroup[index] = !showGroup[index]"
+        @click="toggleBar(index)"
       >
         <span
           class="c-bar-overlay"
@@ -534,7 +657,7 @@ export default {
         :class="{ 'c-bar-highlight' : mouseoverIndex === index }"
         @mouseover="mouseoverIndex = index"
         @mouseleave="mouseoverIndex = -1"
-        @click="showGroup[index] = !showGroup[index]"
+        @click="toggleBar(index)"
       >
         <span
           class="c-bar-overlay"
@@ -546,7 +669,8 @@ export default {
     <div class="c-info-list">
       <div class="c-total-mult">
         <b>
-          {{ totalString() }}
+          <MultiplierBreakdownTotal v-if="isRoot" :resource="resource" />
+          <template v-else>{{ totalString() }}</template>
         </b>
         <span
           class="c-display-settings"
@@ -559,7 +683,7 @@ export default {
             Impact
           </span>
           <PrimaryToggleButton
-            v-if="resource.isOrdered"
+            v-if="resource.isOrdered && canShowFinalImpact"
             v-model="orderedFinalImpact"
             v-tooltip="'Final includes amplification or reduction from later formula steps; Direct only measures this step itself'"
             off="Direct"
@@ -602,55 +726,145 @@ export default {
           v-if="shouldShowEntry(entry)"
           :class="singleEntryClass(index)"
         >
-          <div
-            class="c-entry-click-target"
-            @click="showGroup[index] = !showGroup[index]"
-          >
+          <div class="c-entry-click-target">
             <span
               v-if="resource.isOrdered"
               class="c-ordered-impact-bar"
               :style="orderedImpactStyle(index)"
             />
             <span class="c-entry-text">
-              <span
-                :class="expandIcon(index)"
-                :style="expandIconStyle(index)"
-              />
-              {{ entryString(index) }}
+              <span class="c-entry-expanders">
+                <button
+                  v-if="hasChildEntries(index)"
+                  type="button"
+                  class="c-inline-expander c-inline-expander--children"
+                  v-tooltip="'Show child entries'"
+                  @click.stop="toggleChildren(index)"
+                >
+                  <span
+                    :class="expandIcon(index)"
+                    :style="expandIconStyle(index)"
+                  />
+                </button>
+                <button
+                  v-if="resource.isOrdered && entry.data.hasTransform"
+                  type="button"
+                  class="c-inline-expander c-inline-expander--details"
+                  v-tooltip="'Show or hide detail box'"
+                  @click.stop="toggleDetails(index)"
+                >
+                  <span
+                    :class="detailIcon(index)"
+                    :style="detailIconStyle(index)"
+                  />
+                </button>
+              </span>
+              <span @click="toggleBar(index)">{{ entryString(index) }}</span>
             </span>
           </div>
           <div
-            v-if="resource.isOrdered && showGroup[index] && entry.data.hasTransform"
+            v-if="resource.isOrdered && showDetails[index] && entry.data.hasTransform"
             class="c-ordered-transform-details"
           >
-            <div class="c-transform-detail-grid">
+            <div
+              v-if="starResourceForEntry(entry.key) && starAudits[entry.key]"
+              class="c-transform-detail-grid"
+            >
+              <span>Star / amount</span>
+              <b>{{ starAudits[entry.key].color }} / {{ format(starAudits[entry.key].count, 2, 2) }}</b>
+              <span>Gray Star bonus</span>
+              <b>+{{ format(starAudits[entry.key].grayBoost, 2, 2) }}%</b>
+              <span>Effective exponent</span>
+              <b>{{ formatPow(starAudits[entry.key].exponent, 2, 5) }}</b>
+              <span>Gameplay operation</span>
+              <b>10^(sign(L) × |L|^p), L = log10(multiplier)</b>
+              <span>Scope</span>
+              <b>{{ starAudits[entry.key].scope }}; {{ starAudits[entry.key].tierCount }} active</b>
+              <span>Direct Star step (gameplay)</span>
+              <b>{{ format(starAudits[entry.key].directStarOoM, 2, 2) }} OoM (sum of selected multiplier logs)</b>
+              <span>After downstream caps / overflows</span>
+              <b>{{ format(starAudits[entry.key].multiplierOoM, 2, 2) }} OoM (multiplier product, NOT currency gain)</b>
+              <span>Propagation chain</span>
+              <b>{{ starAudits[entry.key].propagation }}</b>
+              <span>Production endpoint</span>
+              <b>{{ starAudits[entry.key].endpointLabel }}</b>
+              <span>With Star (current)</span>
+              <b>{{ format(starAudits[entry.key].currentProduction, 2, 2) }}</b>
+              <span>Without this Star</span>
+              <b>{{ format(starAudits[entry.key].withoutProduction, 2, 2) }}</b>
+              <span>Instantaneous production difference</span>
+              <b v-if="starAudits[entry.key].productionOoM !== null">
+                {{ format(starAudits[entry.key].productionOoM, 2, 2) }} OoM
+              </b>
+              <b v-else>Not expressible as an OoM ratio (zero production)</b>
+              <span v-if="starAudits[entry.key].mismatch">Gameplay trace check</span>
+              <b v-if="starAudits[entry.key].mismatch">Mismatch: inspect game state / cached multiplier</b>
+              <p class="c-star-audit-note">
+                Calculated from gameplay's multiplier and production functions by replacing only this Star's exponent
+                with 1. Other stars, caps, and challenges are unchanged. This is an instantaneous comparison at fixed
+                dimension amounts, NOT a prediction of future gains from the full dimension chain.
+              </p>
+            </div>
+            <div v-else class="c-transform-detail-grid">
               <span>Effect type</span>
               <b>{{ transformTypeString(entry) }}</b>
-              <span>Direct effect</span>
-              <b>{{ transformValueString(entry) || '—' }}</b>
-              <span>Before this step</span>
-              <b>{{ format(entry.data.transformBefore, 2, 2) }}</b>
-              <span>After this step</span>
-              <b>{{ format(entry.data.transformAfter, 2, 2) }}</b>
-              <span>Direct impact</span>
-              <b>{{ transformImpactString(entry, false) }}</b>
-              <template v-if="entry.data.transformHasFinalWithout">
-                <span>Final with effect</span>
-                <b>{{ format(entry.data.transformFinalWith, 2, 2) }}</b>
-                <span>Final without effect</span>
-                <b>{{ format(entry.data.transformFinalWithout, 2, 2) }}</b>
-                <span>Final impact</span>
-                <b>{{ transformImpactString(entry, true) }}</b>
+              <template v-if="entry.data.transformAggregate">
+                <span>Scope</span>
+                <b>{{ entry.data.transformAggregateScope || 'Producing dimension tiers' }}</b>
+                <span>Combined Direct impact</span>
+                <b>{{ transformImpactString(entry, false) }}</b>
+                <template v-if="entry.data.transformHasFinalWithout">
+                  <span>Combined Final impact</span>
+                  <b>{{ transformImpactString(entry, true) }}</b>
+                </template>
+              </template>
+              <template v-else>
+                <span>Direct effect</span>
+                <b>{{ transformValueString(entry) || '—' }}</b>
+                <span>Before this step</span>
+                <b>{{ format(entry.data.transformBefore, 2, 2) }}</b>
+                <span>After this step</span>
+                <b>{{ format(entry.data.transformAfter, 2, 2) }}</b>
+                <span>Direct impact</span>
+                <b>{{ transformImpactString(entry, false) }}</b>
+                <template v-if="['hardcap', 'softcap'].includes(entry.data.transformType)">
+                  <span>Limit status</span>
+                  <b v-if="entry.data.transformAfter.lt(entry.data.transformBefore)">
+                    Suppression at this operation: {{ transformImpactString(entry, false) }}
+                  </b>
+                  <b v-else>Not currently reducing this value</b>
+                  <template v-if="entry.data.transformDisplay">
+                    <span>Limit / threshold</span>
+                    <b>{{ entry.data.transformDisplay }}</b>
+                  </template>
+                </template>
+                <template v-if="entry.data.transformHasFinalWithout">
+                  <span>Final with effect</span>
+                  <b>{{ format(entry.data.transformFinalWith, 2, 2) }}</b>
+                  <span>Final without effect</span>
+                  <b>{{ format(entry.data.transformFinalWithout, 2, 2) }}</b>
+                  <span>Final impact</span>
+                  <b>{{ transformImpactString(entry, true) }}</b>
+                </template>
               </template>
             </div>
           </div>
           <MultiplierBreakdownEntry
             v-if="showGroup[index] && hasChildEntries(index)"
             :resource="entry"
+            :depth="depth + 1"
           />
         </div>
       </div>
-      <div v-if="isDilated && !isEmpty">
+      <!-- A dimension's multiplier product and its real gameplay cap have different
+           endpoints. Keep the cap INSIDE the main analysis panel, but in a clearly
+           labelled independent section instead of falsely inserting it into
+           the AD multiplier formula or expanding every source into eight tiers. -->
+      <GameplayLimitSummary
+        v-if="isRoot && isDimensionOverall"
+        :resource-key="resource.key.slice(0, 2)"
+      />
+      <div v-if="isDilated && !isEmpty && !resource.isOrdered">
         <div class="c-single-entry c-dilation-entry">
           <div>
             {{ dilationString() }}
@@ -661,26 +875,28 @@ export default {
         v-if="resource.isOrdered && !isEmpty"
         class="c-no-effect c-ordered-note"
       >
-        Left bar shows the direct ordered formula path, split by absolute OoM change at each step.
-        Row bars show relative impact strength normalized to the largest absolute effect on this page; they are not
-        contribution shares and do not add up to {{ formatPercents(1) }}.
-        Final Impact includes all later formula steps; Direct Impact only measures the selected step itself.
-      </div>
-      <div
-        v-if="resource.key === 'AD_total'"
-        class="c-no-effect"
-      >
-        <div>
-          "Base AD Production" is the amount of Antimatter that you would be producing with your current AD upgrades
-          as if you had waited a fixed amount of time ({{ formatInt(10) }}-{{ formatInt(40) }} seconds depending on
-          your AD count) after a Sacrifice. This may misrepresent your actual production if your ADs have been
-          producing for a while, but the relative mismatch will become smaller as you progress further in the game
-          and numbers become larger.
-        </div>
-        <div v-if="inNC12">
-          The breakdown in this tab within Normal Challenge 12 may be inaccurate for some entries, and might count
-          extra multipliers which apply to all Antimatter Dimensions rather than just the ones which are displayed.
-        </div>
+        <template v-if="resource.key === 'tickspeed_galaxies'">
+          Each source is measured by removing only that source's effective galaxy count while keeping all other
+          sources and upgrades fixed. These are counterfactual impacts, not additive percentages; Galactic Ascension
+          can multiply galaxy sources instead of adding them.
+        </template>
+        <template v-else-if="isDimensionOverall && selected === 0">
+          Sources are aggregated across all producing dimensions. This overview defaults to Direct OoM impact for
+          responsiveness, but the Impact toggle can opt into Final when you specifically need the counterfactual full-
+          formula result. Use the grouping button to show individual dimensions and expand a dimension for its ordered
+          formula details. Bars are relative strengths, not contribution shares, and do not add up to
+          {{ formatPercents(1) }}.
+        </template>
+        <template v-else-if="isDimensionOverall">
+          Grouped by dimension, as in the original breakdown: expand AD1–AD8 (or the corresponding ID/TD tiers)
+          here without opening a different tab. The overall value describes combined multipliers, not AM/sec.
+        </template>
+        <template v-else>
+          Left bar shows the direct ordered formula path, split by absolute OoM change at each step.
+          Row bars show relative impact strength normalized to the largest absolute effect on this page; they are not
+          contribution shares and do not add up to {{ formatPercents(1) }}.
+          Final Impact includes all later formula steps; Direct Impact only measures the selected step itself.
+        </template>
       </div>
     </div>
   </div>
@@ -691,8 +907,11 @@ export default {
   display: flex;
   flex-direction: row;
   justify-content: space-between;
+  box-sizing: border-box;
+  gap: 1rem;
   width: 100%;
   max-width: 100rem;
+  min-width: 0;
   border: var(--var-border-width, 0.2rem) solid var(--color-text);
   padding: 0.5rem;
   font-weight: normal;
@@ -707,9 +926,9 @@ export default {
 
 .c-stacked-bars {
   position: relative;
+  flex: 0 0 5rem;
   width: 5rem;
   background-color: var(--color-disabled);
-  margin-right: 1.5rem;
 }
 
 .c-ordered-path-bars {
@@ -746,16 +965,20 @@ export default {
 }
 
 .c-info-list {
-  height: 100%;
-  width: 90%;
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
   padding: 0.2rem;
+  overflow-wrap: anywhere;
 }
 
 .c-display-settings {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
-  width: 8rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: auto;
 }
 
 .c-ordered-display-settings {
@@ -789,6 +1012,8 @@ export default {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
   padding-left: 0.5rem;
   margin-bottom: 1rem;
   color: var(--color-text);
@@ -819,6 +1044,30 @@ export default {
 .c-entry-text {
   position: relative;
   z-index: 1;
+}
+
+.c-entry-expanders {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.35rem;
+}
+
+.c-inline-expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  padding: 0;
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.c-inline-expander--details {
+  opacity: 0.9;
 }
 
 .c-ordered-impact-bar {
@@ -874,5 +1123,31 @@ export default {
 
 @keyframes a-glow-dilation-nerf {
   50% { background-color: var(--color-bad); }
+}
+@media (max-width: 48rem) {
+  .c-multiplier-entry-container {
+    gap: 0.5rem;
+  }
+
+  .c-stacked-bars,
+  .c-ordered-path-bars {
+    flex-basis: 2.5rem;
+    min-width: 2.5rem;
+    width: 2.5rem;
+  }
+
+  .c-ordered-display-settings {
+    min-width: 0;
+  }
+
+  .c-transform-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.c-star-audit-note {
+  grid-column: 1 / -1;
+  margin: 0.5rem 0 0;
+  opacity: 0.8;
+  line-height: 1.4;
 }
 </style>

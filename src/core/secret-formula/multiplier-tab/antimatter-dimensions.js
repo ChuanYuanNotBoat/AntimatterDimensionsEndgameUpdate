@@ -1,60 +1,26 @@
 import { PlayerProgress } from "../../player-progress";
 
+import { AntimatterDimensionBreakdown, AD_ORDERED_GROUPS, AD_ORDERED_LABELS } from "./antimatter-dimension-breakdown";
 import { MultiplierTabHelper } from "./helper-functions";
 import { MultiplierTabIcons } from "./icons";
 
 // See index.js for documentation
 export const AD = {
   total: {
-    name: dim => {
-      if (dim) return `AD ${dim} Multiplier`;
-      if (NormalChallenge(12).isRunning) {
-        if (MultiplierTabHelper.actualNC12Production().eq(0)) return "Base AD Production from All Dimensions";
-        return `Base AD Production from ${MultiplierTabHelper.isNC12ProducingEven() ? "Even" : "Odd"} Dimensions`;
-      }
-      return "Base AD Production";
-    },
-    displayOverride: dim => {
-      if (dim) {
-        const singleMult = NormalChallenge(12).isRunning
-          ? MultiplierTabHelper.multInNC12(dim)
-          : AntimatterDimension(dim).multiplier;
-        return formatX(singleMult, 2, 2);
-      }
-      const maxTier = EternityChallenge(7).isRunning ? 7 : MultiplierTabHelper.activeDimCount("AD");
-      if (NormalChallenge(12).isRunning) return `${format(MultiplierTabHelper.actualNC12Production(), 2)}/sec`;
-      return `${format(AntimatterDimensions.all
-        .filter(ad => ad.isProducing)
-        .map(ad => ad.multiplier)
-        .reduce((x, y) => x.times(y), DC.D1)
-        .times(AntimatterDimension(maxTier).totalAmount), 2)}/sec`;
-    },
-    multValue: dim => {
-      if (NormalChallenge(12).isRunning) {
-        const nc12Prod = MultiplierTabHelper.actualNC12Production();
-        if (!dim) return nc12Prod.eq(0) ? 1 : nc12Prod;
-        return (MultiplierTabHelper.isNC12ProducingEven() ? dim % 2 === 0 : dim % 2 === 1)
-          ? MultiplierTabHelper.multInNC12(dim)
-          : DC.D1;
-      }
-      const mult = dim
-        ? AntimatterDimension(dim).multiplier
-        : AntimatterDimensions.all
-          .filter(ad => ad.isProducing)
-          .map(ad => ad.multiplier)
-          .reduce((x, y) => x.times(y), DC.D1);
-      const highestDim = AntimatterDimension(
-        EternityChallenge(7).isRunning ? 7 : MultiplierTabHelper.activeDimCount("AD")).totalAmount;
-      return mult.times(highestDim).clampMin(1);
-    },
-    isActive: dim => (dim ? dim <= MultiplierTabHelper.activeDimCount("AD") : true),
-    dilationEffect: () => {
-      const baseEff = (player.dilation.active || Enslaved.isRunning)
-        ? 0.75 * Effects.product(DilationUpgrade.dilationPenalty)
-        : 1;
-      return baseEff * (Effarig.isRunning ? Effarig.multDilation : 1);
-    },
-    isDilated: true,
+    name: dim => dim ? `AD ${dim} Multiplier` : "Combined AD Multipliers (not production)",
+    displayOverride: dim => dim
+      ? formatX(AntimatterDimension(dim).multiplier, 2, 2)
+      : formatX(AntimatterDimensions.all.filter(ad => ad.isProducing)
+        .reduce((product, ad) => product.times(ad.multiplier), DC.D1), 2, 2),
+    multValue: dim => dim
+      ? AntimatterDimension(dim).multiplier
+      : AntimatterDimensions.all.filter(ad => ad.isProducing)
+        .reduce((product, ad) => product.times(ad.multiplier), DC.D1),
+    transformValue: dim => dim
+      ? AntimatterDimensionBreakdown.summary(dim)
+      : AntimatterDimensionBreakdown.totalSummary(),
+    isOrdered: true,
+    isActive: dim => dim ? AntimatterDimension(dim).isProducing : true,
     overlay: ["Ω", "<i class='fas fa-cube' />"],
     icon: dim => MultiplierTabIcons.DIMENSION("AD", dim),
   },
@@ -148,10 +114,7 @@ export const AD = {
           tier === 7 ? Achievement(17) : null,
           tier === 8 ? Achievement(23) : null,
           tier < 8 ? Achievement(34) : null,
-          tier <= 4 ? Achievement(64) : null,
-          tier < 8 ? TimeStudy(71) : null,
-          tier === 8 ? TimeStudy(214) : null,
-          tier > 1 && tier < 8 ? InfinityChallenge(8).reward : null
+          tier <= 4 ? Achievement(64) : null
         );
         if (Achievement(43).isUnlocked) {
           dimMults[tier] = dimMults[tier].times(1 + tier / 100);
@@ -374,6 +337,37 @@ export const AD = {
     icon: MultiplierTabIcons.IAP,
   },
 
+  // These sources are present in the gameplay formula but were absent from
+  // the legacy AD source list. Their raw factor/exponent is correct; the AD
+  // percentages remain approximate because the full formula is non-commutative.
+  nullUpgrade: {
+    name: "Null Upgrade - AD common multiplier",
+    multValue: dim => Decimal.pow(NullUpgrade.antimatterDimensionMult.effectOrDefault(1),
+      dim ? 1 : MultiplierTabHelper.activeDimCount("AD")),
+    isActive: () => LHC.voidRunning && !EternityChallenge(11).isRunning,
+    icon: MultiplierTabIcons.UPGRADE("reality"),
+  },
+  breakEternityPower: {
+    name: "Break Eternity - AD power (raw exponent)",
+    powValue: () => new Decimal(BreakEternityUpgrade.antimatterDimensionPow.effectOrDefault(1)).toNumber(),
+    isActive: () => !EternityChallenge(11).isRunning,
+    icon: MultiplierTabIcons.UPGRADE("eternity"),
+  },
+  achievementSurgePower: {
+    name: "Resurgence - Achievement Surge (raw exponent)",
+    powValue: () => Achievements.powerConv(Achievements.power),
+    isActive: () => ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality &&
+      !EternityChallenge(11).isRunning,
+    icon: MultiplierTabIcons.ACHIEVEMENT,
+  },
+  alphaPower: {
+    name: "Alpha - Time Study 181 AD powers (raw exponent)",
+    powValue: () => (Alpha.isRunning ? AlphaUnlocks.timestudy181.effects.nerf.effectOrDefault(1) : 1) *
+      (!player.disablePostReality ? AlphaUnlocks.timestudy181.effects.buff.effectOrDefault(1) : 1),
+    isActive: () => !EternityChallenge(11).isRunning,
+    icon: MultiplierTabIcons.TIME_STUDY,
+  },
+
   effectNC: {
     name: dim => (dim ? `Normal Challenge Effect (AD ${dim})` : "Normal Challenge Effects"),
     // Depending on the challenge itself and the game state, this could be either a nerf or a buff, so we make
@@ -487,3 +481,29 @@ export const AD = {
     icon: MultiplierTabIcons.PELLE,
   }
 };
+
+// Only the ordered entries are connected to the AD root. The legacy entries above remain
+// temporarily for compatibility with historical IDs, but are NOT used for attribution.
+function orderedADEntry(name, key) {
+  const transform = tier => (tier
+    ? AntimatterDimensionBreakdown.transform(tier, key)
+    : AntimatterDimensionBreakdown.aggregateTransform(key));
+  return {
+    name,
+    transformValue: transform,
+    displayOverride: tier => {
+      const data = transform(tier);
+      if (!data || data.aggregate) return "";
+      if (data.display) return data.display;
+      if (data.type === "multiply" && data.value !== undefined) return formatX(data.value, 2, 2);
+      if (data.type === "power" && data.value !== undefined) return formatPow(data.value, 2, 3);
+      return `${format(data.before, 2, 2)} ➜ ${format(data.after, 2, 2)}`;
+    },
+    isActive: tier => tier ? AntimatterDimension(tier).isProducing : true,
+    icon: MultiplierTabIcons.DIMENSION("AD"),
+    isOrdered: AD_ORDERED_GROUPS.some(([group, , children]) => group === key && children.length > 0),
+  };
+}
+for (const [key, label] of Object.entries(AD_ORDERED_LABELS)) {
+  AD[key] = orderedADEntry(label, key);
+}

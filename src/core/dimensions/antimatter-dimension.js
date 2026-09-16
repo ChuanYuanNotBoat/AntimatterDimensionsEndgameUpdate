@@ -54,7 +54,9 @@ export function antimatterDimensionCommonMultiplier() {
   return multiplier;
 }
 
-export function getDimensionFinalMultiplierUncached(tier) {
+// An optional neutral star exponent permits a read-only, exact counterfactual.
+// All other multipliers, nerfs and overflows remain on the gameplay path.
+export function getDimensionFinalMultiplierUncached(tier, redStarExponent = null, starCheckpoint = null) {
   if (tier < 1 || tier > 8) throw new Error(`Invalid Antimatter Dimension tier ${tier}`);
   if (NormalChallenge(10).isRunning && tier > 6) return DC.D1;
   if (EternityChallenge(11).isRunning) {
@@ -108,7 +110,9 @@ export function getDimensionFinalMultiplierUncached(tier) {
 
   multiplier = dilateMultiplier(multiplier, Achievement(231).effectOrDefault(1));
 
-  multiplier = dilateMultiplier(multiplier, EtherealStars.red.reward);
+  if (starCheckpoint) starCheckpoint.before = multiplier;
+  multiplier = dilateMultiplier(multiplier, redStarExponent ?? EtherealStars.red.reward);
+  if (starCheckpoint) starCheckpoint.after = multiplier;
 
   if (player.endgame.overcharge.isRunning) {
     multiplier = dilateMultiplier(multiplier, Math.pow(0.72, player.endgame.overcharge.level));
@@ -674,6 +678,11 @@ class AntimatterDimensionState extends DimensionState {
   }
 
   get productionPerSecond() {
+    return this.productionPerSecondWithMultiplier();
+  }
+
+  // Uses the unmodified gameplay production chain with a supplied AD multiplier.
+  productionPerSecondWithMultiplier(multiplier = undefined, diagnostic = null) {
     const tier = this.tier;
     if (Laitela.isRunning && tier > Laitela.maxAllowedDimension) return DC.D0;
     let amount = this.totalAmount;
@@ -682,14 +691,26 @@ class AntimatterDimensionState extends DimensionState {
       if (tier === 4) amount = amount.pow(1.4);
       if (tier === 6) amount = amount.pow(1.2);
     }
-    let production = amount.times(this.multiplier).times(Tickspeed.perSecond);
+    let production = amount.times(multiplier ?? this.multiplier).times(Tickspeed.perSecond);
+    // An optional, read-only diagnostic records the *gameplay* production path.
+    // It is never allocated by normal ticks; statistics can inspect actual cap losses
+    // without maintaining a second approximation of this extremely nonlinear formula.
+    const record = diagnostic
+      ? (key, type, before, display = "") => diagnostic.push({ key, type, before, after: production, display })
+      : null;
+    if (diagnostic) diagnostic.push({ key: "raw", type: "formula", before: DC.D1,
+      after: production, display: "Effective amount × gameplay multiplier × one Tickspeed rate" });
+    let checkpoint = production;
     if (NormalChallenge(2).isRunning) {
       production = production.times(player.chall2Pow);
     }
+    record?.("challenge2", "multiply", checkpoint, "Normal Challenge 2 multiplier (when active)");
     if (tier === 1) {
       if (NormalChallenge(3).isRunning) {
         production = production.times(player.chall3Pow);
       }
+      record?.("challenge3", "multiply", checkpoint, "Normal Challenge 3 multiplier (AD1 only)");
+      checkpoint = production;
       if (production.gt(1)) {
         production = production.pow(Accelerators.potency.effectValue1);
       }
@@ -704,46 +725,70 @@ class AntimatterDimensionState extends DimensionState {
         const pelleOnly = Pelle.isDoomed ? DivineDimensions.conversionFormula2 * Accelerators.cosmic.effectValue2 * EndgameMastery(222).effectOrDefault(1) * SingularityMilestone.singAMDoomDilation.effectOrDefault(1) : 1;
         production = Decimal.pow10(Decimal.pow(log10, getAdjustedGlyphEffect("effarigantimatter") * Effects.product(EndgameMastery(101), EndgameUpgrade(15), SingularityMilestone.antimatterExponentPower, Achievement(233)) * endgameMultValue * EtherealStars.black.reward.toNumber() * pelleOnly));
       }
+      record?.("productionPowers", "power", checkpoint,
+        "NC3, Accelerator potency, Synergy, glyph/mastery/endgame and Black Star effects");
+      checkpoint = production;
       if (production.gt(Decimal.pow10(1e150)) && Pelle.isDoomed && player.celestials.pelle.divinities < 1) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10.div(1e150), 0.5).times(1e150));
       }
+      record?.("pelleCap150", "softcap", checkpoint, "Pelle compression above 10^(1e150)");
+      checkpoint = production;
       if (production.gt(Decimal.pow10(1e225)) && Pelle.isDoomed && player.celestials.pelle.divinities < 1) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10.div(1e225), 0.1).times(1e225));
       }
+      record?.("pelleCap225", "softcap", checkpoint, "Pelle compression above 10^(1e225)");
+      checkpoint = production;
       if (production.gt(Decimal.pow10(9e15)) && Pelle.isDoomed && player.celestials.pelle.divinities >= 1) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10.div(9e15), 0.16 / Math.pow(2, player.celestials.pelle.divinities)).times(9e15));
       }
+      record?.("pelleDivinityCap", "softcap", checkpoint, "Pelle Divinity compression above 10^(9e15)");
+      checkpoint = production;
       if (production.gt(1e10) && Pelle.isDoomed) {
         const log10 = production.log10().log10();
         production = Decimal.pow10(Decimal.pow10(Decimal.pow(log10, DivinityUpgrade.divineL1U4.effectOrDefault(1) * Accelerators.cosmic.effectValue3)));
       }
+      record?.("pelleLog", "formula", checkpoint, "Pelle logarithmic production transformation");
+      checkpoint = production;
       if (ResurgenceUpgrade.ipSurge.isBought && !player.disablePostReality) {
         production = production.times(gainedInfinityPoints().max(1));
       }
       if (ResurgenceUpgrade.epSurge.isBought && !player.disablePostReality) {
         production = production.times(gainedEternityPoints().max(1));
       }
+      record?.("surges", "multiply", checkpoint, "Resurgence IP / EP production boosts");
+      checkpoint = production;
       if (production.gt(Decimal.pow10(1e200)) && !Pelle.isDoomed && !player.endgame.overcharge.isRunning) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10.div(1e200), 1 / Accelerators.emptiness.effectValue3).times(1e200));
       }
+      record?.("productionCap200", "softcap", checkpoint, "AD1 production compression above 10^(1e200)");
+      checkpoint = production;
       if (production.gt(Decimal.pow10(1e260)) && !Pelle.isDoomed && !player.endgame.overcharge.isRunning) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10.div(1e260), 0.01).times(1e260));
       }
+      record?.("productionCap260", "softcap", checkpoint, "AD1 production compression above 10^(1e260)");
+      checkpoint = production;
       if (production.gt(10) && LHC.nullifiedVoidRunning) {
         const log10 = production.log10();
         production = Decimal.pow10(Decimal.pow(log10, 0.01));
       }
+      record?.("nullifiedVoid", "softcap", checkpoint, "Nullified Void log-exponent compression");
+      checkpoint = production;
       if (production.gt(1) && player.endgame.overcharge.isRunning) {
         const slog = production.slog();
         production = Decimal.tetrate(10, slog.times(0.75).toNumber());
       }
+      record?.("overcharge", "softcap", checkpoint, "Overcharge tetration compression");
     }
-    production = production.min(this.cappedProductionInNormalChallenges);
+    // Endgame and challenge caps apply to every AD tier, not to its multiplier.
+    checkpoint = production;
+    const cap = this.cappedProductionInNormalChallenges;
+    production = production.min(cap);
+    record?.("challengeCap", "hardcap", checkpoint, diagnostic ? `Production hardcap: ${format(cap, 2, 2)}/sec` : "");
     return production;
   }
 }

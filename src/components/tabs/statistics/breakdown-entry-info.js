@@ -36,15 +36,38 @@ export class BreakdownEntryInfo {
       transformDisplay: "",
       transformFinalWith: new Decimal(1),
       transformFinalWithout: new Decimal(1),
-      transformHasFinalWithout: false
+      transformHasFinalWithout: false,
+      transformAggregate: false,
+      transformAggregateScope: ""
     });
   }
 
-  update() {
-    const transform = this.transform;
-    const isVisible = this.isVisibleWithTransform(transform);
-    this.data.mult.fromDecimal(isVisible ? this.mult : DC.D1);
-    this.data.pow = isVisible ? this.pow : 1;
+  update(includeFinal = false) {
+    const active = this.isActive;
+    const transform = active ? this.getTransform(includeFinal) : null;
+    // Cache the values locally. The old code evaluated both the multiplier and power
+    // once for visibility and again when writing the observed data, multiplied across
+    // every expanded row on each UI update.
+    let mult = DC.D1;
+    let pow = 1;
+    let isVisible = false;
+    if (active) {
+      if (this._hasTransform) {
+        isVisible = transform !== null && (transform.alwaysShow || transform.before.neq(transform.after));
+        // Legacy consumers can still read mult/pow from transform-backed entries.
+        // Keep their previous behavior while avoiding evaluation for invisible entries.
+        if (isVisible) {
+          mult = this.mult;
+          pow = this.pow;
+        }
+      } else {
+        mult = this.mult;
+        pow = this.pow;
+        isVisible = pow !== 1 || mult.neq(1);
+      }
+    }
+    this.data.mult.fromDecimal(isVisible ? mult : DC.D1);
+    this.data.pow = isVisible ? pow : 1;
     this.data.isVisible = isVisible;
 
     this.data.hasTransform = transform !== null;
@@ -58,6 +81,8 @@ export class BreakdownEntryInfo {
       this.data.transformFinalWith.fromDecimal(transform.finalWith ?? transform.after);
       this.data.transformHasFinalWithout = transform.finalWithout !== null;
       this.data.transformFinalWithout.fromDecimal(transform.finalWithout ?? transform.after);
+      this.data.transformAggregate = transform.aggregate;
+      this.data.transformAggregateScope = transform.aggregateScope;
     } else {
       this.data.transformType = "";
       this.data.transformBefore.fromDecimal(DC.D1);
@@ -68,11 +93,11 @@ export class BreakdownEntryInfo {
       this.data.transformFinalWith.fromDecimal(DC.D1);
       this.data.transformFinalWithout.fromDecimal(DC.D1);
       this.data.transformHasFinalWithout = false;
+      this.data.transformAggregate = false;
+      this.data.transformAggregateScope = "";
     }
 
-    if (isVisible) {
-      this.data.lastVisibleAt = Date.now();
-    }
+    if (isVisible) this.data.lastVisibleAt = Date.now();
   }
 
   get name() {
@@ -88,12 +113,19 @@ export class BreakdownEntryInfo {
   }
 
   get transform() {
+    return this.getTransform(false);
+  }
+
+  getTransform(includeFinal = false) {
     if (!this._hasTransform) return null;
     const raw = this._transformValue();
     if (raw === undefined || raw === null) return null;
 
     const before = new Decimal(raw.before ?? 1);
     const after = new Decimal(raw.after ?? before);
+    // Each lazy getter must be read at most once per update.
+    const finalWith = includeFinal ? raw.finalWith : null;
+    const finalWithout = includeFinal && Object.hasOwn(raw, "finalWithout") ? raw.finalWithout : null;
     return {
       type: raw.type ?? "override",
       before,
@@ -101,8 +133,11 @@ export class BreakdownEntryInfo {
       value: raw.value === undefined || raw.value === null ? null : new Decimal(raw.value),
       display: raw.display ?? "",
       alwaysShow: raw.alwaysShow ?? false,
-      finalWith: raw.finalWith === undefined || raw.finalWith === null ? null : new Decimal(raw.finalWith),
-      finalWithout: raw.finalWithout === undefined || raw.finalWithout === null ? null : new Decimal(raw.finalWithout),
+      finalWith: finalWith === undefined || finalWith === null ? null : new Decimal(finalWith),
+      // Do not access lazy finalWithout while displaying only Direct impact.
+      finalWithout: finalWithout === undefined || finalWithout === null ? null : new Decimal(finalWithout),
+      aggregate: raw.aggregate ?? false,
+      aggregateScope: raw.aggregateScope ?? "",
     };
   }
 

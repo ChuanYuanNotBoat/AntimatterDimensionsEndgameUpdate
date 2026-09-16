@@ -1,8 +1,10 @@
-export function effectiveBaseGalaxies() {
+// Optional source exclusion is used only by the stats breakdown for exact marginal
+// effective-count comparisons; the default path is unchanged for gameplay.
+export function effectiveBaseGalaxies(excludedSource = null) {
   let alternation = Decimal.max(0, Replicanti.amount.add(1).log10().div(1e6)).times(AlchemyResource.alternation.effectValue).add(1);
-  let galaxies = player.galaxies;
+  let galaxies = excludedSource === "antimatter" ? DC.D0 : player.galaxies;
   if (!player.disablePostReality && Alpha.currentStage >= 3) galaxies = galaxies.times(alternation);
-  let generatedGalaxies = GalaxyGenerator.galaxies;
+  let generatedGalaxies = excludedSource === "generated" ? DC.D0 : GalaxyGenerator.galaxies;
   if (!player.disablePostReality && Alpha.currentStage >= 3) generatedGalaxies = generatedGalaxies.times(alternation);
   // Note that this already includes the "50% more" active path effect
   let replicantiGalaxies = Replicanti.galaxies.bought;
@@ -18,9 +20,10 @@ export function effectiveBaseGalaxies() {
   // this value should not be contributed to total replicanti galaxies
   replicantiGalaxies = replicantiGalaxies.add(nonActivePathReplicantiGalaxies.times(Effects.sum(EternityChallenge(8).reward)));
   if (!player.disablePostReality && Alpha.currentStage >= 3) replicantiGalaxies = replicantiGalaxies.times(alternation);
-  let freeGalaxies = player.dilation.totalTachyonGalaxies;
+  if (excludedSource === "replicanti") replicantiGalaxies = DC.D0;
+  let freeGalaxies = excludedSource === "tachyon" ? DC.D0 : player.dilation.totalTachyonGalaxies;
   freeGalaxies = freeGalaxies.times(alternation);
-  let extraGalaxies = GalacticPower.freeGalaxies;
+  let extraGalaxies = excludedSource === "galactic" ? DC.D0 : GalacticPower.freeGalaxies;
   if (!player.disablePostReality && Alpha.currentStage >= 3) extraGalaxies = extraGalaxies.times(alternation);
   return GalacticPowers.galacticAscension.isUnlocked ?
     Decimal.max(galaxies.max(1).times(generatedGalaxies.max(1)).times(replicantiGalaxies.max(1)).times(
@@ -28,10 +31,10 @@ export function effectiveBaseGalaxies() {
     replicantiGalaxies).add(freeGalaxies).add(extraGalaxies), 0);
 }
 
-export function getTickSpeedMultiplier() {
+export function getTickSpeedMultiplier(galaxyCount = null) {
   if (InfinityChallenge(3).isRunning) return DC.D1;
   if (Ra.isRunning) return DC.C1D1_1245;
-  let galaxies = effectiveBaseGalaxies();
+  let galaxies = galaxyCount === null ? effectiveBaseGalaxies() : galaxyCount;
   const effects = DC.D1.timesEffectsOf(
     InfinityUpgrade.galaxyBoost,
     InfinityUpgrade.galaxyBoost.chargedEffect,

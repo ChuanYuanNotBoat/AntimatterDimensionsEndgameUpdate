@@ -281,6 +281,11 @@ class TimeDimensionState extends DimensionState {
   }
 
   get multiplier() {
+    return this.multiplierWithEtherealStar();
+  }
+
+  // Keep the complete production multiplier (including overflows) in gameplay code.
+  multiplierWithEtherealStar(purpleStarExponent = undefined, starCheckpoint = null, capDiagnostics = null) {
     const tier = this._tier;
 
     if (EternityChallenge(11).isRunning) return DC.D1;
@@ -340,20 +345,36 @@ class TimeDimensionState extends DimensionState {
 
     if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) mult = mult.pow(Achievements.powerConv(EternityUpgrade.tdMultAchs.effectOrDefault(1)));
 
-    mult = dilateMultiplier(mult, EtherealStars.purple.reward);
+    if (starCheckpoint) starCheckpoint.before = mult;
+    mult = dilateMultiplier(mult, purpleStarExponent ?? EtherealStars.purple.reward);
+    if (starCheckpoint) starCheckpoint.after = mult;
 
     if (player.endgame.overcharge.isRunning) {
       mult = dilateMultiplier(mult, Math.pow(0.72, player.endgame.overcharge.level));
     }
 
+    // Optional cap diagnostics are captured at the exact gameplay operation.
+    // Normal multiplier evaluation does not allocate a diagnostic array.
+    if (capDiagnostics) capDiagnostics.push({ key: "overflow1", tier, before: mult,
+      threshold: TimeDimensions.OVERFLOW, type: "softcap" });
     if (mult.gte(TimeDimensions.OVERFLOW)) mult = Decimal.pow(10, Decimal.pow(mult.log10().div(Decimal.log10(TimeDimensions.OVERFLOW)), 1 / TimeDimensions.compressionMagnitude).times(Decimal.log10(TimeDimensions.OVERFLOW)));
+    if (capDiagnostics) capDiagnostics[capDiagnostics.length - 1].after = mult;
 
+    // Optional cap diagnostics are captured at the exact gameplay operation.
+    // Normal multiplier evaluation does not allocate a diagnostic array.
+    if (capDiagnostics) capDiagnostics.push({ key: "overflow2", tier, before: mult,
+      threshold: TimeDimensions.OVERFLOW_SQUARED, type: "softcap" });
     if (mult.gte(TimeDimensions.OVERFLOW_SQUARED)) mult = Decimal.pow(10, Decimal.pow(mult.log10().div(Decimal.log10(TimeDimensions.OVERFLOW_SQUARED)), 1 / TimeDimensions.compressionMag2).times(Decimal.log10(TimeDimensions.OVERFLOW_SQUARED)));
+    if (capDiagnostics) capDiagnostics[capDiagnostics.length - 1].after = mult;
 
     return mult;
   }
 
   get productionPerSecond() {
+    return this.productionPerSecondWithMultiplier();
+  }
+
+  productionPerSecondWithMultiplier(multiplier = undefined) {
     if (EternityChallenge(1).isRunning || EternityChallenge(10).isRunning ||
     (Laitela.isRunning && this.tier > Laitela.maxAllowedDimension)) {
       return DC.D0;
@@ -364,7 +385,7 @@ class TimeDimensionState extends DimensionState {
     if (this.tier === this.highestProducingDimension && Alpha.isRunning && Alpha.currentStage >= 14 && Alpha.currentStage < 23) {
       return this.totalAmount;
     }
-    let production = this.totalAmount.times(this.multiplier);
+    let production = this.totalAmount.times(multiplier ?? this.multiplier);
     if (EternityChallenge(7).isRunning) {
       production = production.times(Tickspeed.perSecond);
     }

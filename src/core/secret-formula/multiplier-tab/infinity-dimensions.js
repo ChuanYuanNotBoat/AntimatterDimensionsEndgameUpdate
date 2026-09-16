@@ -1,20 +1,40 @@
 import { PlayerProgress } from "../../player-progress";
 
 import { MultiplierTabHelper } from "./helper-functions";
+import { InfinityDimensionBreakdown } from "./infinity-dimension-breakdown";
 import { MultiplierTabIcons } from "./icons";
+
+function orderedIDEntry(name, key, icon, isOrdered = false) {
+  const transform = dim => (dim
+    ? InfinityDimensionBreakdown.transform(dim, key)
+    : InfinityDimensionBreakdown.aggregateTransform(key));
+  return {
+    name,
+    transformValue: transform,
+    displayOverride: dim => {
+      const data = transform(dim);
+      if (!data) return "";
+      if (data.aggregate) return "";
+      if (data.display) return data.display;
+      if (data.type === "multiply" && data.value !== undefined) return formatX(data.value, 2, 2);
+      if (data.type === "power" && data.value !== undefined) return formatPow(data.value, 2, 3);
+      return `${format(data.before, 2, 2)} ➜ ${format(data.after, 2, 2)}`;
+    },
+    isActive: dim => (dim ? InfinityDimension(dim).isProducing : transform(dim) !== null),
+    icon,
+    isOrdered,
+  };
+}
 
 // See index.js for documentation
 export const ID = {
   total: {
     name: dim => {
-      if (dim) return `ID ${dim} Multiplier`;
+      if (dim) return `ID ${dim} Production`;
       if (EternityChallenge(7).isRunning) return "AD7 Production";
       return "Infinity Power Production";
     },
-    displayOverride: dim => (dim
-      ? formatX(InfinityDimension(dim).multiplier, 2)
-      : `${format(InfinityDimension(1).productionPerSecond, 2)}/sec`
-    ),
+    displayOverride: dim => `${format(InfinityDimension(dim ?? 1).productionPerSecond, 2)}/sec`,
     multValue: dim => (dim
       ? InfinityDimension(dim).multiplier
       : InfinityDimensions.all
@@ -33,6 +53,10 @@ export const ID = {
     isDilated: true,
     overlay: ["∞", "<i class='fa-solid fa-cube' />"],
     icon: dim => MultiplierTabIcons.DIMENSION("ID", dim),
+    transformValue: dim => (dim
+      ? InfinityDimensionBreakdown.summary(dim)
+      : InfinityDimensionBreakdown.totalSummary()),
+    isOrdered: true,
   },
   purchase: {
     name: dim => (dim ? `Purchased ID ${dim}` : "Purchases"),
@@ -294,5 +318,185 @@ export const ID = {
     powValue: 0.5,
     isActive: () => PelleStrikes.powerGalaxies.hasStrike,
     icon: MultiplierTabIcons.PELLE,
-  }
+  },
+
+  // Ordered Infinity Dimension production trace. These entries intentionally coexist with the legacy entries above:
+  // AD's Infinity Power breakdown still uses several legacy values, while the ID tab itself uses this exact
+  // formula tree.
+  baseAmount: orderedIDEntry(
+    dim => `ID ${dim} Amount`,
+    "base",
+    dim => MultiplierTabIcons.DIMENSION("ID", dim)
+  ),
+  commonEffects: orderedIDEntry(
+    "Common Multipliers",
+    "common",
+    MultiplierTabIcons.UPGRADE("infinity"),
+    true
+  ),
+  commonIAP: orderedIDEntry("Shop Tab Purchases", "commonIAP", MultiplierTabIcons.IAP),
+  commonAchievements: orderedIDEntry("Achievements", "commonAchievements", MultiplierTabIcons.ACHIEVEMENT, true),
+  achievement63: orderedIDEntry("Achievement 63", "achievement63", MultiplierTabIcons.ACHIEVEMENT),
+  achievement75: orderedIDEntry("Achievement 75", "achievement75", MultiplierTabIcons.ACHIEVEMENT),
+  achievement77: orderedIDEntry("Achievement 77", "achievement77", MultiplierTabIcons.ACHIEVEMENT),
+  commonTimeStudies: orderedIDEntry("Time Studies", "commonTimeStudies", MultiplierTabIcons.TIME_STUDY, true),
+  timeStudy82: orderedIDEntry("Time Study 82", "timeStudy82", MultiplierTabIcons.TIME_STUDY),
+  timeStudy92: orderedIDEntry("Time Study 92", "timeStudy92", MultiplierTabIcons.TIME_STUDY),
+  timeStudy162: orderedIDEntry("Time Study 162", "timeStudy162", MultiplierTabIcons.TIME_STUDY),
+  commonInfinityChallenges: orderedIDEntry(
+    "Infinity Challenge Rewards",
+    "commonInfinityChallenges",
+    MultiplierTabIcons.CHALLENGE("infinity"),
+    true
+  ),
+  infinityChallenge1: orderedIDEntry(
+    "Infinity Challenge 1",
+    "infinityChallenge1",
+    MultiplierTabIcons.CHALLENGE("infinity")
+  ),
+  infinityChallenge6: orderedIDEntry(
+    "Infinity Challenge 6",
+    "infinityChallenge6",
+    MultiplierTabIcons.CHALLENGE("infinity")
+  ),
+  commonEternityChallenges: orderedIDEntry(
+    "Eternity Challenge Rewards",
+    "commonEternityChallenges",
+    MultiplierTabIcons.CHALLENGE("eternity"),
+    true
+  ),
+  eternityChallenge4: orderedIDEntry(
+    "Eternity Challenge 4",
+    "eternityChallenge4",
+    MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  eternityChallenge9: orderedIDEntry(
+    "Eternity Challenge 9",
+    "eternityChallenge9",
+    MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  commonEternityUpgrades: orderedIDEntry(
+    "Eternity Upgrades",
+    "commonEternityUpgrades",
+    MultiplierTabIcons.UPGRADE("eternity"),
+    true
+  ),
+  eternityUpgradeEP: orderedIDEntry(
+    "Unspent Eternity Points",
+    "eternityUpgradeEP",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  eternityUpgradeEternities: orderedIDEntry(
+    "Eternity Count",
+    "eternityUpgradeEternities",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  eternityUpgradeICRecords: orderedIDEntry(
+    "Infinity Challenge Records",
+    "eternityUpgradeICRecords",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  commonAlchemy: orderedIDEntry("Dimensionality Alchemy", "commonAlchemy", MultiplierTabIcons.ALCHEMY),
+  commonImaginary: orderedIDEntry(
+    "Imaginary Upgrade - Hyperbolic Apeirogon",
+    "commonImaginary",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  commonPelle: orderedIDEntry("Pelle Recursion Rift", "commonPelle", MultiplierTabIcons.PELLE),
+  commonReplicanti: orderedIDEntry(
+    "Replicanti Multiplier",
+    "commonReplicanti",
+    MultiplierTabIcons.SPECIFIC_GLYPH("replication")
+  ),
+  commonNull: orderedIDEntry("Null Upgrade", "commonNull", MultiplierTabIcons.UPGRADE("imaginary")),
+
+  tierEffects: orderedIDEntry("Tier-specific Multipliers", "tierEffects", MultiplierTabIcons.DIMENSION("ID"), true),
+  tierAchievement94: orderedIDEntry("Achievement 94", "tierAchievement94", MultiplierTabIcons.ACHIEVEMENT),
+  tierTimeStudy72: orderedIDEntry("Time Study 72", "tierTimeStudy72", MultiplierTabIcons.TIME_STUDY),
+  tierEC2: orderedIDEntry("Eternity Challenge 2", "tierEC2", MultiplierTabIcons.CHALLENGE("eternity")),
+
+  orderedPurchase: orderedIDEntry("Purchases / Continuum", "purchase", MultiplierTabIcons.PURCHASE("ID"), true),
+  purchaseBaseOrdered: orderedIDEntry(
+    "Base per-purchase Multiplier",
+    "purchaseBase",
+    MultiplierTabIcons.PURCHASE("baseID")
+  ),
+  purchaseGlyphSacrificeOrdered: orderedIDEntry(
+    "Infinity Glyph Sacrifice",
+    "purchaseGlyphSacrifice",
+    MultiplierTabIcons.SACRIFICE("infinity")
+  ),
+  purchaseImaginaryPowerOrdered: orderedIDEntry(
+    "Imaginary Upgrade - Recollection of Intrusion",
+    "purchaseImaginaryPower",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  purchaseSingularityPowerOrdered: orderedIDEntry(
+    "Singularity per-purchase Power",
+    "purchaseSingularityPower",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+
+  decayOrdered: orderedIDEntry("Pelle Decay Rift", "decay", MultiplierTabIcons.PELLE),
+  preDilationPowers: orderedIDEntry(
+    "Glyph and Global Powers", "preDilationPowers", MultiplierTabIcons.GENERIC_GLYPH, true
+  ),
+  glyphInfinityPower: orderedIDEntry("Infinity Glyph Power", "glyphInfinityPower", MultiplierTabIcons.GENERIC_GLYPH),
+  glyphEffarigPower: orderedIDEntry(
+    "Effarig Glyph Dimension Power", "glyphEffarigPower", MultiplierTabIcons.GENERIC_GLYPH
+  ),
+  glyphCursedPower: orderedIDEntry(
+    "Cursed Glyph Dimension Power", "glyphCursedPower", MultiplierTabIcons.SPECIFIC_GLYPH("cursed")
+  ),
+  alchemyInfinityPower: orderedIDEntry("Infinity Alchemy Power", "alchemyInfinityPower", MultiplierTabIcons.ALCHEMY),
+  raMomentumPower: orderedIDEntry("Ra Momentum", "raMomentumPower", MultiplierTabIcons.ALCHEMY),
+  pelleParadoxPower: orderedIDEntry("Pelle Paradox Rift", "pelleParadoxPower", MultiplierTabIcons.PELLE),
+  singularityDimensionPower: orderedIDEntry(
+    "Singularity Dimension Power", "singularityDimensionPower", MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  raTimeTheoremPower: orderedIDEntry("Ra Time Theorem Power", "raTimeTheoremPower", MultiplierTabIcons.ALCHEMY),
+  raInfinityDimensionPower: orderedIDEntry(
+    "Ra Infinity Dimension Power", "raInfinityDimensionPower", MultiplierTabIcons.ALCHEMY
+  ),
+  pellePackPower: orderedIDEntry("Pelle Expansion Pack Power", "pellePackPower", MultiplierTabIcons.PELLE),
+
+  dilationOrdered: orderedIDEntry("Dilation", "dilation", MultiplierTabIcons.UPGRADE("dilation")),
+  effarigOrdered: orderedIDEntry("Effarig's Reality", "effarig", MultiplierTabIcons.GENERIC_GLYPH),
+  vNerfOrdered: orderedIDEntry("V's Reality", "vNerf", MultiplierTabIcons.GENERIC_V),
+  pelleStrikeOrdered: orderedIDEntry("Pelle Power Galaxies Strike", "pelleStrike", MultiplierTabIcons.PELLE),
+
+  postDilationPowers: orderedIDEntry(
+    "Post-Dilation Powers", "postDilationPowers", MultiplierTabIcons.UPGRADE("infinity"), true
+  ),
+  ascensionTimeStudy72Power: orderedIDEntry(
+    "Ascended Time Study 72", "ascensionTimeStudy72Power", MultiplierTabIcons.TIME_STUDY
+  ),
+  breakEternityPower: orderedIDEntry(
+    "Break Eternity ID Power", "breakEternityPower", MultiplierTabIcons.UPGRADE("infinity")
+  ),
+  alphaTier8Power: orderedIDEntry("Alpha ID8 Reward", "alphaTier8Power", MultiplierTabIcons.UPGRADE("infinity")),
+  alphaTier1Power: orderedIDEntry(
+    "Alpha Eternity Upgrade Reward", "alphaTier1Power", MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  alphaNerfPower: orderedIDEntry("Alpha ID Nerf", "alphaNerfPower", MultiplierTabIcons.UPGRADE("infinity")),
+  dualityPower: orderedIDEntry("Duality Upgrade 8", "dualityPower", MultiplierTabIcons.UPGRADE("imaginary")),
+  replicantiSurgePower: orderedIDEntry(
+    "Duplicated Surge", "replicantiSurgePower", MultiplierTabIcons.SPECIFIC_GLYPH("replication")
+  ),
+  achievementSurgePower: orderedIDEntry("Achievement Surge", "achievementSurgePower", MultiplierTabIcons.ACHIEVEMENT),
+
+  etherealOrdered: orderedIDEntry("Ethereal Stars", "ethereal", MultiplierTabIcons.UPGRADE("imaginary")),
+  overchargeOrdered: orderedIDEntry("Endgame Overcharge", "overcharge", MultiplierTabIcons.UPGRADE("imaginary")),
+  overflow1Ordered: orderedIDEntry("Infinity Dimension Overflow", "overflow1", MultiplierTabIcons.DIMENSION("ID")),
+  overflow2Ordered: orderedIDEntry(
+    "Infinity Dimension Second Overflow", "overflow2", MultiplierTabIcons.DIMENSION("ID")
+  ),
+  tickspeedOrdered: orderedIDEntry("Tickspeed (EC7)", "tickspeed", MultiplierTabIcons.TICKSPEED),
+  ec11OverrideOrdered: orderedIDEntry(
+    "Eternity Challenge 11 Override", "ec11Override", MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  traceMismatchOrdered: orderedIDEntry(
+    "Untracked ID Formula Difference", "traceMismatch", MultiplierTabIcons.DIMENSION("ID")
+  ),
+
 };

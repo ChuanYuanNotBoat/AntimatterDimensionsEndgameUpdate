@@ -1,101 +1,118 @@
-import { MultiplierTabHelper } from "./helper-functions";
+import { GameSpeedBreakdown } from "./game-speed-breakdown";
 import { MultiplierTabIcons } from "./icons";
 
-// See index.js for documentation
 export const gamespeed = {
   total: {
     name: "Game speed",
-    displayOverride: () => {
-      if (Enslaved.isStoringRealTime) return `Set to ${format(0)} (storing real time)`;
-      if (EternityChallenge(12).isRunning) return `${formatX(1)}/${formatInt(1000)} (fixed)`;
-      const curr = getGameSpeedupFactor();
-
-      const bh = MultiplierTabHelper.blackHoleSpeeds();
-      const currBH = bh.current;
-      const avgBH = bh.average;
-
-      const avgSpeed = Enslaved.isAutoReleasing
-        ? getGameSpeedupForDisplay()
-        : curr.div(currBH).times(avgBH);
-      const avgString = ` (current) | ${formatX(avgSpeed, 2, 2)} (average)`;
-      return `${formatX(curr, 2, 2)}${curr.eq(avgSpeed) ? "" : avgString}`;
-    },
+    displayOverride: () => Enslaved.isStoringRealTime
+      ? `Simulation paused (real time stored); computed multiplier ${formatX(getGameSpeedupForDisplay(), 2, 2)}`
+      : `${formatX(getGameSpeedupForDisplay(), 2, 2)} (current display speed)`,
     multValue: () => getGameSpeedupForDisplay(),
     isActive: () => PlayerProgress.seenAlteredSpeed(),
-    dilationEffect: () => (Effarig.isRunning ? Effarig.multDilation : 1),
-    isDilated: true,
+    isOrdered: true,
     overlay: ["Δ", `<i class="fas fa-clock" />`, `<i class="fas fa-circle" />`],
+    icon: MultiplierTabIcons.GAMESPEED,
   },
-  glyph: {
-    name: "Equipped Glyphs",
-    multValue: () => getAdjustedGlyphEffect("timespeed"),
-    powValue: () => getAdjustedGlyphEffect("effarigblackhole"),
-    isActive: () => PlayerProgress.realityUnlocked() && !EternityChallenge(12).isRunning,
-    icon: MultiplierTabIcons.GENERIC_GLYPH,
+  base: {
+    name: "Base speed (×1)",
+    transformValue: () => GameSpeedBreakdown.transform("base"),
+    isActive: true,
+    icon: MultiplierTabIcons.GAMESPEED,
   },
-  blackHoleCurr: {
-    name: "Current Black Hole Speedup",
-    multValue: () => MultiplierTabHelper.blackHoleSpeeds().current,
-    isActive: () => BlackHole(1).isUnlocked && !BlackHoles.arePaused && !EternityChallenge(12).isRunning,
+  fixed: {
+    name: "EC12 / Overcharge: fixed speed",
+    transformValue: () => GameSpeedBreakdown.transform("fixed"),
+    isActive: true,
+    icon: MultiplierTabIcons.CHALLENGE("eternity"),
+  },
+  blackHole: {
+    name: "Black Holes / inverted BH / V / Resurgence",
+    transformValue: () => GameSpeedBreakdown.transform("blackHole"),
+    isActive: true,
     icon: MultiplierTabIcons.BLACK_HOLE,
-  },
-  blackHoleAvg: {
-    name: "Average Black Hole Speedup",
-    multValue: () => MultiplierTabHelper.blackHoleSpeeds().average,
-    isActive: () => BlackHole(1).isUnlocked && !BlackHoles.arePaused && !EternityChallenge(12).isRunning,
-    icon: MultiplierTabIcons.BLACK_HOLE,
-  },
-  achievementMult: {
-    name: "30 V-Achievement Milestone - Achievement Multiplier",
-    multValue: () => Decimal.pow(VUnlocks.achievementBH.effectOrDefault(1),
-      BlackHoles.list.countWhere(bh => bh.isUnlocked)),
-    isActive: () => !BlackHoles.arePaused && VUnlocks.achievementBH.canBeApplied && !EternityChallenge(12).isRunning,
-    icon: MultiplierTabIcons.ACHIEVEMENT,
-  },
-  pulsing: {
-    name: "Auto-Discharging Stored Time",
-    multValue: () => (Enslaved.isAutoReleasing
-      ? Decimal.max(Enslaved.autoReleaseSpeed.div(getGameSpeedupFactor()), 1)
-      : getGameSpeedupFactor()),
-    isActive: () => Enslaved.canRelease() && Enslaved.isAutoReleasing && !EternityChallenge(12).isRunning,
-    icon: MultiplierTabIcons.BH_PULSE,
   },
   singularity: {
-    name: "Singularity Milestone - Game speed based on Singularities",
-    multValue: () => SingularityMilestone.gamespeedFromSingularities.effectOrDefault(1),
-    isActive: () => SingularityMilestone.gamespeedFromSingularities.canBeApplied && !EternityChallenge(12).isRunning,
+    name: "Singularity milestone",
+    transformValue: () => GameSpeedBreakdown.transform("singularity"),
+    isActive: true,
     icon: MultiplierTabIcons.SINGULARITY,
   },
+  timeGlyph: {
+    name: "Time Glyph - speed multiplier",
+    transformValue: () => GameSpeedBreakdown.transform("timeGlyph"),
+    isActive: true,
+    icon: MultiplierTabIcons.GENERIC_GLYPH,
+  },
+  effarigGlyphPower: {
+    name: "Effarig Glyph - speed power",
+    transformValue: () => GameSpeedBreakdown.transform("effarigGlyphPower"),
+    isActive: true,
+    icon: MultiplierTabIcons.GENERIC_GLYPH,
+  },
+  celestialMatter: {
+    name: "Celestial Matter - CM ^ conversion exponent",
+    transformValue: () => GameSpeedBreakdown.transform("celestialMatter"),
+    isActive: true,
+    icon: MultiplierTabIcons.GAMESPEED,
+  },
+  celestialIP: {
+    name: "Celestial Infinity Upgrade - game speed",
+    transformValue: () => GameSpeedBreakdown.transform("celestialIP"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("infinity"),
+  },
+  raTesseract: {
+    name: "Ra - Tesseract speed boost",
+    transformValue: () => GameSpeedBreakdown.transform("raTesseract"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("reality"),
+  },
+  raPower: {
+    name: "Ra - Game speed improvement power",
+    transformValue: () => GameSpeedBreakdown.transform("raPower"),
+    isActive: true,
+    icon: MultiplierTabIcons.UPGRADE("reality"),
+  },
+  timeStorage: {
+    name: "Enslaved - time storage affine transform",
+    transformValue: () => GameSpeedBreakdown.transform("timeStorage"),
+    isActive: true,
+    icon: MultiplierTabIcons.BH_PULSE,
+  },
+  celestialNerf: {
+    name: "Effarig / Lai'tela game-speed transformations",
+    transformValue: () => GameSpeedBreakdown.transform("celestialNerf"),
+    isActive: true,
+    icon: MultiplierTabIcons.GENERIC_LAITELA,
+  },
   pelle: {
-    name: "Pelle Upgrade - Repeatable Game speed",
-    multValue: () => PelleUpgrade.timeSpeedMult.effectValue.toNumber(),
-    isActive: () => Pelle.isDoomed && !EternityChallenge(12).isRunning,
+    name: "Pelle - repeatable game speed",
+    transformValue: () => GameSpeedBreakdown.transform("pelle"),
+    isActive: true,
     icon: MultiplierTabIcons.PELLE,
   },
-
-  ec12: {
-    name: "Eternity Challenge 12",
-    multValue: () => new Decimal(0.001).div(getGameSpeedupForDisplay()),
-    isActive: () => EternityChallenge(12).isRunning,
-    icon: MultiplierTabIcons.CHALLENGE("eternity"),
+  peak: {
+    name: "Endgame upgrade - speed floor at historical peak",
+    transformValue: () => GameSpeedBreakdown.transform("peak"),
+    isActive: true,
+    icon: MultiplierTabIcons.GAMESPEED,
   },
-  chargingBH: {
-    name: "Black Hole Charging",
-    // The 0 in multValue is irrelevant; if this upgrade isn't available, the subtab is hidden by 1x total effect
-    multValue: () => (Ra.unlocks.autoPulseTime.canBeApplied ? 0.01 : 0),
-    isActive: () => Enslaved.isStoringGameTime,
-    icon: MultiplierTabIcons.BLACK_HOLE,
+  clamp: {
+    name: "Final game-speed limits / uncap milestone",
+    transformValue: () => GameSpeedBreakdown.transform("clamp"),
+    isActive: true,
+    icon: MultiplierTabIcons.GAMESPEED,
   },
-  invertedBH: {
-    name: "Inverted Black Hole",
-    multValue: () => player.blackHoleNegative,
-    isActive: () => BlackHoles.areNegative,
-    icon: MultiplierTabIcons.CHALLENGE("eternity"),
+  autoRelease: {
+    name: "Enslaved - automatic time pulse",
+    transformValue: () => GameSpeedBreakdown.transform("autoRelease"),
+    isActive: true,
+    icon: MultiplierTabIcons.BH_PULSE,
   },
-  nerfLaitela: {
-    name: "Lai'tela's Reality",
-    powValue: () => Time.thisRealityRealTime.totalMinutes.div(10).clampMax(1).toNumber(),
-    isActive: () => Laitela.isRunning,
-    icon: MultiplierTabIcons.GENERIC_LAITELA,
-  }
+  traceMismatch: {
+    name: "Untracked game-speed formula difference",
+    transformValue: () => GameSpeedBreakdown.transform("traceMismatch"),
+    isActive: true,
+    icon: MultiplierTabIcons.GAMESPEED,
+  },
 };

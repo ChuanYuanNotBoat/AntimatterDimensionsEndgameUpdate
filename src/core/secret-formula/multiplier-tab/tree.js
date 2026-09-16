@@ -1,5 +1,6 @@
 /* eslint-disable max-depth */
 /* eslint-disable camelcase */
+import { AD_ORDERED_GROUPS, AD_ORDERED_KEYS } from "./antimatter-dimension-breakdown";
 import { MultiplierTabHelper } from "./helper-functions";
 import { multiplierTabValues } from "./values";
 
@@ -7,7 +8,7 @@ const dynamicGenProps = ["TP", "DT", "infinities", "eternities", "gamespeed", "r
 const propList = {
   AD: ["purchase", "dimboost", "sacrifice", "achievementMult", "achievement", "infinityUpgrade",
     "breakInfinityUpgrade", "infinityPower", "infinityChallenge", "timeStudy", "eternityChallenge", "glyph", "v",
-    "alchemy", "pelle", "iap", "effectNC", "nerfIC", "nerfV", "nerfCursed", "nerfPelle"],
+    "alchemy", "pelle", "iap", "nullUpgrade", "breakEternityPower", "achievementSurgePower", "alphaPower", "effectNC", "nerfIC", "nerfV", "nerfCursed", "nerfPelle"],
   ID: ["purchase", "achievementMult", "achievement", "replicanti", "infinityChallenge", "timeStudy", "eternityUpgrade",
     "eternityChallenge", "glyph", "alchemy", "imaginaryUpgrade", "pelle", "iap", "nerfV", "nerfCursed", "nerfPelle"],
   TD: ["purchase", "achievementMult", "achievement", "timeStudy", "eternityUpgrade", "eternityChallenge",
@@ -53,8 +54,11 @@ function getProps(resource, tier) {
 // specification, all children props are dynamically added based on the arrays in the helper functions above
 export const multiplierTabTree = {
   AM_total: [
-    ["AD_total", "tickspeed_total", "AM_effarigAM"]
+    ["AD_total_1", "AM_tickRate"]
   ],
+  AM_tickRate: [["AM_tickBase", "AM_tickPurchased", "AM_tickFree", "AM_tickGalaxies",
+    "AM_tickRaPower", "AM_tickDilationPower", "AM_tickEffarig", "AM_tickDilation",
+    "AM_tickOvercharge", "AM_tickTraceMismatch"]],
   AD_total: [
     getProps("AD"),
     append8("AD_total")
@@ -86,13 +90,15 @@ export const multiplierTabTree = {
     getProps("DT")
   ],
   tickspeed_total: [
-    ["tickspeed_base", "tickspeed_upgrades", "tickspeed_galaxies", "tickspeed_pelleTickspeedPow"]
+    ["tickspeed_base", "tickspeed_purchased", "tickspeed_free", "tickspeed_galaxies",
+      "tickspeed_raPower", "tickspeed_dilationPower", "tickspeed_effarig", "tickspeed_dilation",
+      "tickspeed_overcharge", "tickspeed_dimensionExponent", "tickspeed_traceMismatch"]
   ],
   tickspeed_upgrades: [
     ["tickspeedUpgrades_purchased", "tickspeedUpgrades_free"]
   ],
   tickspeed_galaxies: [
-    ["galaxies_antimatter", "galaxies_replicanti", "galaxies_tachyon", "galaxies_nerfPelle"]
+    ["galaxies_antimatter", "galaxies_generated", "galaxies_replicanti", "galaxies_tachyon", "galaxies_galactic"]
   ],
   infinities_total: [
     getProps("infinities")
@@ -108,18 +114,17 @@ export const multiplierTabTree = {
   ],
 };
 
-// Gamespeed's two alternate displays are current and average gamespeed, distinguished by which of two
-// mutually-exclusive entries appear in the list. We explicity modify props here as needed
-const allGamespeed = multiplierTabTree.gamespeed_total[0];
-multiplierTabTree.gamespeed_total[0] = [...allGamespeed].filter(key => key !== "gamespeed_blackHoleAvg");
-multiplierTabTree.gamespeed_total[1] = [...allGamespeed].filter(key => key !== "gamespeed_blackHoleCurr");
+// Non-dimension resources have a single ordered calculation view. The old current/average
+// Black Hole grouping was a UI comparison, not a separate dimension-tier breakdown.
 
-// DT doesn't explicitly have an entry to TP, due to it being its own total entry, so we link them together
-multiplierTabTree.DT_total[0].unshift("TP_total");
+// DT now has an ordered TP base step; do not double-count TP_total as an independent modifier.
 
 // Additional data specification for dynamically-generated props
 const dimTypes = ["AD", "ID", "TD"];
-const singleRes = ["IP", "EP", "DT", "infinities", "replicanti"];
+// Ordered DT/Infinities/Replicanti entries already have individually traced sources.
+// The legacy general_* children would show stale, un-gated values (especially in Pelle),
+// so do not attach those secondary approximations below the new exact rows.
+const singleRes = ["IP", "EP"];
 const targetedEffects = {
   achievement: {
     checkFn: MultiplierTabHelper.achievementDimCheck,
@@ -241,4 +246,326 @@ multiplierTabTree.TD_eternityUpgrade = [[`TD_eu1`, `TD_eu2`]];
 for (let dim = 1; dim <= 8; dim++) {
   multiplierTabTree[`ID_eternityUpgrade_${dim}`] = [[`ID_eu1_${dim}`, `ID_eu2_${dim}`, `ID_eu3_${dim}`]];
   multiplierTabTree[`TD_eternityUpgrade_${dim}`] = [[`TD_eu1_${dim}`, `TD_eu2_${dim}`]];
+}
+
+// ID and TD use exact ordered production traces. Their root view aggregates the same source across all producing
+// tiers (matching the original overall/individual-dimension UX), while the tier selector opens the exact sequential
+// formula for one dimension. Aggregate rows sum signed OoM impact across tiers instead of inventing a global order.
+
+const idOrderedParents = [
+  "baseAmount",
+  "ec11OverrideOrdered",
+  "commonEffects",
+  "tierEffects",
+  "orderedPurchase",
+  "decayOrdered",
+  "preDilationPowers",
+  "dilationOrdered",
+  "effarigOrdered",
+  "vNerfOrdered",
+  "pelleStrikeOrdered",
+  "postDilationPowers",
+  "etherealOrdered",
+  "overchargeOrdered",
+  "overflow1Ordered",
+  "overflow2Ordered",
+  "tickspeedOrdered",
+  "traceMismatchOrdered",
+];
+
+const tdOrderedParents = [
+  "baseAmount",
+  "ec11OverrideOrdered",
+  "alphaProductionBypassOrdered",
+  "commonEffects",
+  "tierEffects",
+  "orderedPurchase",
+  "preDilationPowers",
+  "dilationOrdered",
+  "effarigOrdered",
+  "vNerfOrdered",
+  "postDilationPowers",
+  "etherealOrdered",
+  "overchargeOrdered",
+  "overflow1Ordered",
+  "overflow2Ordered",
+  "tickspeedOrdered",
+  "timeShardGlyphPowerOrdered",
+  "traceMismatchOrdered",
+];
+
+function orderedKeys(resource, props) {
+  return props.map(prop => `${resource}_${prop}`);
+}
+
+function orderedDimKeys(resource, props, dim) {
+  return props.map(prop => `${resource}_${prop}_${dim}`);
+}
+
+const idOverallParents = idOrderedParents.filter(prop => prop !== "baseAmount");
+const tdOverallParents = tdOrderedParents.filter(prop => prop !== "baseAmount");
+// Match the original grouping control: the SAME root can be displayed by source or
+// by dimension, and each tier can be expanded inline. These are not separate tabs.
+multiplierTabTree.ID_total = [orderedKeys("ID", idOverallParents), append8("ID_total")];
+multiplierTabTree.TD_total = [orderedKeys("TD", tdOverallParents), append8("TD_total")];
+
+multiplierTabTree.ID_commonEffects = [[
+  "ID_commonIAP",
+  "ID_commonAchievements",
+  "ID_commonTimeStudies",
+  "ID_commonInfinityChallenges",
+  "ID_commonEternityChallenges",
+  "ID_commonEternityUpgrades",
+  "ID_commonAlchemy",
+  "ID_commonImaginary",
+  "ID_commonPelle",
+  "ID_commonReplicanti",
+  "ID_commonNull",
+]];
+multiplierTabTree.ID_commonAchievements = [["ID_achievement63", "ID_achievement75", "ID_achievement77"]];
+multiplierTabTree.ID_commonTimeStudies = [["ID_timeStudy82", "ID_timeStudy92", "ID_timeStudy162"]];
+multiplierTabTree.ID_commonInfinityChallenges = [["ID_infinityChallenge1", "ID_infinityChallenge6"]];
+multiplierTabTree.ID_commonEternityChallenges = [["ID_eternityChallenge4", "ID_eternityChallenge9"]];
+multiplierTabTree.ID_commonEternityUpgrades = [[
+  "ID_eternityUpgradeEP",
+  "ID_eternityUpgradeEternities",
+  "ID_eternityUpgradeICRecords",
+]];
+multiplierTabTree.ID_tierEffects = [["ID_tierAchievement94", "ID_tierTimeStudy72", "ID_tierEC2"]];
+multiplierTabTree.ID_orderedPurchase = [[
+  "ID_purchaseBaseOrdered",
+  "ID_purchaseGlyphSacrificeOrdered",
+  "ID_purchaseImaginaryPowerOrdered",
+  "ID_purchaseSingularityPowerOrdered",
+]];
+multiplierTabTree.ID_preDilationPowers = [[
+  "ID_glyphInfinityPower",
+  "ID_glyphEffarigPower",
+  "ID_glyphCursedPower",
+  "ID_alchemyInfinityPower",
+  "ID_raMomentumPower",
+  "ID_pelleParadoxPower",
+  "ID_singularityDimensionPower",
+  "ID_raTimeTheoremPower",
+  "ID_raInfinityDimensionPower",
+  "ID_pellePackPower",
+]];
+multiplierTabTree.ID_postDilationPowers = [[
+  "ID_ascensionTimeStudy72Power",
+  "ID_breakEternityPower",
+  "ID_alphaTier8Power",
+  "ID_alphaTier1Power",
+  "ID_alphaNerfPower",
+  "ID_dualityPower",
+  "ID_replicantiSurgePower",
+  "ID_achievementSurgePower",
+]];
+
+multiplierTabTree.TD_commonEffects = [[
+  "TD_commonIAP",
+  "TD_commonAchievements",
+  "TD_commonTimeStudies",
+  "TD_commonEternityChallenges",
+  "TD_commonEternityUpgrades",
+  "TD_commonRealityUpgrade",
+  "TD_commonAlchemy",
+  "TD_commonPelle",
+  "TD_commonReplicanti",
+  "TD_ec9InfinityPower",
+  "TD_commonNull",
+]];
+multiplierTabTree.TD_commonAchievements = [["TD_achievement105", "TD_achievement128"]];
+multiplierTabTree.TD_commonTimeStudies = [[
+  "TD_timeStudy93",
+  "TD_timeStudy103",
+  "TD_timeStudy151",
+  "TD_timeStudy221",
+  "TD_timeStudy301",
+]];
+multiplierTabTree.TD_commonEternityChallenges = [["TD_eternityChallenge1", "TD_eternityChallenge10"]];
+multiplierTabTree.TD_commonEternityUpgrades = [[
+  "TD_eternityUpgradeAchievements",
+  "TD_eternityUpgradeTheorems",
+  "TD_eternityUpgradeRealTime",
+]];
+multiplierTabTree.TD_tierEffects = [["TD_tierTimeStudy11", "TD_tierTimeStudy73", "TD_tierTimeStudy227"]];
+multiplierTabTree.TD_orderedPurchase = [[
+  "TD_purchaseBaseOrdered",
+  "TD_purchaseGlyphSacrificeOrdered",
+  "TD_purchaseImaginaryPowerOrdered",
+  "TD_purchaseSingularityPowerOrdered",
+]];
+multiplierTabTree.TD_preDilationPowers = [[
+  "TD_glyphTimePower",
+  "TD_glyphEffarigPower",
+  "TD_glyphCursedPower",
+  "TD_alchemyTimePower",
+  "TD_raMomentumPower",
+  "TD_imaginaryPower",
+  "TD_pelleParadoxPower",
+  "TD_singularityDimensionPower",
+  "TD_raTimeTheoremPower",
+  "TD_pellePackPower",
+]];
+multiplierTabTree.TD_postDilationPowers = [[
+  "TD_ascensionTimeStudy73Power",
+  "TD_breakEternityPower",
+  "TD_alphaEC5Power",
+  "TD_alphaTier8Power",
+  "TD_replicantiSurgePower",
+  "TD_achievementSurgePower",
+]];
+
+for (let dim = 1; dim <= 8; dim++) {
+  multiplierTabTree[`ID_total_${dim}`] = [orderedDimKeys("ID", idOrderedParents, dim)];
+  multiplierTabTree[`TD_total_${dim}`] = [orderedDimKeys("TD", tdOrderedParents, dim)];
+
+  multiplierTabTree[`ID_commonEffects_${dim}`] = [[
+    `ID_commonIAP_${dim}`,
+    `ID_commonAchievements_${dim}`,
+    `ID_commonTimeStudies_${dim}`,
+    `ID_commonInfinityChallenges_${dim}`,
+    `ID_commonEternityChallenges_${dim}`,
+    `ID_commonEternityUpgrades_${dim}`,
+    `ID_commonAlchemy_${dim}`,
+    `ID_commonImaginary_${dim}`,
+    `ID_commonPelle_${dim}`,
+    `ID_commonReplicanti_${dim}`,
+    `ID_commonNull_${dim}`,
+  ]];
+  multiplierTabTree[`ID_commonAchievements_${dim}`] = [[
+    `ID_achievement63_${dim}`,
+    `ID_achievement75_${dim}`,
+    `ID_achievement77_${dim}`,
+  ]];
+  multiplierTabTree[`ID_commonTimeStudies_${dim}`] = [[
+    `ID_timeStudy82_${dim}`,
+    `ID_timeStudy92_${dim}`,
+    `ID_timeStudy162_${dim}`,
+  ]];
+  multiplierTabTree[`ID_commonInfinityChallenges_${dim}`] = [[
+    `ID_infinityChallenge1_${dim}`,
+    `ID_infinityChallenge6_${dim}`,
+  ]];
+  multiplierTabTree[`ID_commonEternityChallenges_${dim}`] = [[
+    `ID_eternityChallenge4_${dim}`,
+    `ID_eternityChallenge9_${dim}`,
+  ]];
+  multiplierTabTree[`ID_commonEternityUpgrades_${dim}`] = [[
+    `ID_eternityUpgradeEP_${dim}`,
+    `ID_eternityUpgradeEternities_${dim}`,
+    `ID_eternityUpgradeICRecords_${dim}`,
+  ]];
+  multiplierTabTree[`ID_tierEffects_${dim}`] = [[
+    `ID_tierAchievement94_${dim}`,
+    `ID_tierTimeStudy72_${dim}`,
+    `ID_tierEC2_${dim}`,
+  ]];
+  multiplierTabTree[`ID_orderedPurchase_${dim}`] = [[
+    `ID_purchaseBaseOrdered_${dim}`,
+    `ID_purchaseGlyphSacrificeOrdered_${dim}`,
+    `ID_purchaseImaginaryPowerOrdered_${dim}`,
+    `ID_purchaseSingularityPowerOrdered_${dim}`,
+  ]];
+  multiplierTabTree[`ID_preDilationPowers_${dim}`] = [[
+    `ID_glyphInfinityPower_${dim}`,
+    `ID_glyphEffarigPower_${dim}`,
+    `ID_glyphCursedPower_${dim}`,
+    `ID_alchemyInfinityPower_${dim}`,
+    `ID_raMomentumPower_${dim}`,
+    `ID_pelleParadoxPower_${dim}`,
+    `ID_singularityDimensionPower_${dim}`,
+    `ID_raTimeTheoremPower_${dim}`,
+    `ID_raInfinityDimensionPower_${dim}`,
+    `ID_pellePackPower_${dim}`,
+  ]];
+  multiplierTabTree[`ID_postDilationPowers_${dim}`] = [[
+    `ID_ascensionTimeStudy72Power_${dim}`,
+    `ID_breakEternityPower_${dim}`,
+    `ID_alphaTier8Power_${dim}`,
+    `ID_alphaTier1Power_${dim}`,
+    `ID_alphaNerfPower_${dim}`,
+    `ID_dualityPower_${dim}`,
+    `ID_replicantiSurgePower_${dim}`,
+    `ID_achievementSurgePower_${dim}`,
+  ]];
+
+  multiplierTabTree[`TD_commonEffects_${dim}`] = [[
+    `TD_commonIAP_${dim}`,
+    `TD_commonAchievements_${dim}`,
+    `TD_commonTimeStudies_${dim}`,
+    `TD_commonEternityChallenges_${dim}`,
+    `TD_commonEternityUpgrades_${dim}`,
+    `TD_commonRealityUpgrade_${dim}`,
+    `TD_commonAlchemy_${dim}`,
+    `TD_commonPelle_${dim}`,
+    `TD_commonReplicanti_${dim}`,
+    `TD_ec9InfinityPower_${dim}`,
+    `TD_commonNull_${dim}`,
+  ]];
+  multiplierTabTree[`TD_commonAchievements_${dim}`] = [[
+    `TD_achievement105_${dim}`,
+    `TD_achievement128_${dim}`,
+  ]];
+  multiplierTabTree[`TD_commonTimeStudies_${dim}`] = [[
+    `TD_timeStudy93_${dim}`,
+    `TD_timeStudy103_${dim}`,
+    `TD_timeStudy151_${dim}`,
+    `TD_timeStudy221_${dim}`,
+    `TD_timeStudy301_${dim}`,
+  ]];
+  multiplierTabTree[`TD_commonEternityChallenges_${dim}`] = [[
+    `TD_eternityChallenge1_${dim}`,
+    `TD_eternityChallenge10_${dim}`,
+  ]];
+  multiplierTabTree[`TD_commonEternityUpgrades_${dim}`] = [[
+    `TD_eternityUpgradeAchievements_${dim}`,
+    `TD_eternityUpgradeTheorems_${dim}`,
+    `TD_eternityUpgradeRealTime_${dim}`,
+  ]];
+  multiplierTabTree[`TD_tierEffects_${dim}`] = [[
+    `TD_tierTimeStudy11_${dim}`,
+    `TD_tierTimeStudy73_${dim}`,
+    `TD_tierTimeStudy227_${dim}`,
+  ]];
+  multiplierTabTree[`TD_orderedPurchase_${dim}`] = [[
+    `TD_purchaseBaseOrdered_${dim}`,
+    `TD_purchaseGlyphSacrificeOrdered_${dim}`,
+    `TD_purchaseImaginaryPowerOrdered_${dim}`,
+    `TD_purchaseSingularityPowerOrdered_${dim}`,
+  ]];
+  multiplierTabTree[`TD_preDilationPowers_${dim}`] = [[
+    `TD_glyphTimePower_${dim}`,
+    `TD_glyphEffarigPower_${dim}`,
+    `TD_glyphCursedPower_${dim}`,
+    `TD_alchemyTimePower_${dim}`,
+    `TD_raMomentumPower_${dim}`,
+    `TD_imaginaryPower_${dim}`,
+    `TD_pelleParadoxPower_${dim}`,
+    `TD_singularityDimensionPower_${dim}`,
+    `TD_raTimeTheoremPower_${dim}`,
+    `TD_pellePackPower_${dim}`,
+  ]];
+  multiplierTabTree[`TD_postDilationPowers_${dim}`] = [[
+    `TD_ascensionTimeStudy73Power_${dim}`,
+    `TD_breakEternityPower_${dim}`,
+    `TD_alphaEC5Power_${dim}`,
+    `TD_alphaTier8Power_${dim}`,
+    `TD_replicantiSurgePower_${dim}`,
+    `TD_achievementSurgePower_${dim}`,
+  ]];
+}
+
+// Replace the legacy AD graph with the tier-accurate formula tree. In particular, do not
+// mix amount/production with dimension multipliers or display the old duplicated sources.
+multiplierTabTree.AD_total = [AD_ORDERED_KEYS.map(key => `AD_${key}`), append8("AD_total")];
+for (let tier = 1; tier <= 8; tier++) {
+  multiplierTabTree[`AD_total_${tier}`] = [AD_ORDERED_KEYS.map(key => `AD_${key}_${tier}`)];
+}
+for (const [key, , children] of AD_ORDERED_GROUPS) {
+  if (children.length === 0) continue;
+  multiplierTabTree[`AD_${key}`] = [children.map(([child]) => `AD_${child}`)];
+  for (let tier = 1; tier <= 8; tier++) {
+    multiplierTabTree[`AD_${key}_${tier}`] = [children.map(([child]) => `AD_${child}_${tier}`)];
+  }
 }

@@ -127,6 +127,10 @@ class InfinityDimensionState extends DimensionState {
   }
 
   get productionPerSecond() {
+    return this.productionPerSecondWithMultiplier();
+  }
+
+  productionPerSecondWithMultiplier(multiplier = undefined) {
     if (EternityChallenge(2).isRunning || EternityChallenge(10).isRunning ||
       (Laitela.isRunning && this.tier > Laitela.maxAllowedDimension)) {
       return DC.D0;
@@ -138,10 +142,15 @@ class InfinityDimensionState extends DimensionState {
     if (EternityChallenge(7).isRunning) {
       production = production.times(Tickspeed.perSecond);
     }
-    return production.times(this.multiplier);
+    return production.times(multiplier ?? this.multiplier);
   }
 
   get multiplier() {
+    return this.multiplierWithEtherealStar();
+  }
+
+  // Same source-of-truth calculation; only the orange-star exponent can differ.
+  multiplierWithEtherealStar(orangeStarExponent = undefined, starCheckpoint = null, capDiagnostics = null) {
     const tier = this.tier;
     if (EternityChallenge(11).isRunning) return DC.D1;
     let mult = GameCache.infinityDimensionCommonMultiplier.value
@@ -214,15 +223,27 @@ class InfinityDimensionState extends DimensionState {
 
     if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) mult = mult.pow(Achievements.powerConv(Achievement(75).effectOrDefault(1)));
 
-    mult = dilateMultiplier(mult, EtherealStars.orange.reward);
+    if (starCheckpoint) starCheckpoint.before = mult;
+    mult = dilateMultiplier(mult, orangeStarExponent ?? EtherealStars.orange.reward);
+    if (starCheckpoint) starCheckpoint.after = mult;
 
     if (player.endgame.overcharge.isRunning) {
       mult = dilateMultiplier(mult, Math.pow(0.72, player.endgame.overcharge.level));
     }
 
+    // Optional cap diagnostics are captured at the exact gameplay operation.
+    // Normal multiplier evaluation does not allocate a diagnostic array.
+    if (capDiagnostics) capDiagnostics.push({ key: "overflow1", tier, before: mult,
+      threshold: InfinityDimensions.OVERFLOW, type: "softcap" });
     if (mult.gte(InfinityDimensions.OVERFLOW)) mult = Decimal.pow(10, Decimal.pow(mult.log10().div(Decimal.log10(InfinityDimensions.OVERFLOW)), 1 / InfinityDimensions.compressionMagnitude).times(Decimal.log10(InfinityDimensions.OVERFLOW)));
+    if (capDiagnostics) capDiagnostics[capDiagnostics.length - 1].after = mult;
 
+    // Optional cap diagnostics are captured at the exact gameplay operation.
+    // Normal multiplier evaluation does not allocate a diagnostic array.
+    if (capDiagnostics) capDiagnostics.push({ key: "overflow2", tier, before: mult,
+      threshold: InfinityDimensions.OVERFLOW_SQUARED, type: "softcap" });
     if (mult.gte(InfinityDimensions.OVERFLOW_SQUARED)) mult = Decimal.pow(10, Decimal.pow(mult.log10().div(Decimal.log10(InfinityDimensions.OVERFLOW_SQUARED)), 1 / InfinityDimensions.compressionMag2).times(Decimal.log10(InfinityDimensions.OVERFLOW_SQUARED)));
+    if (capDiagnostics) capDiagnostics[capDiagnostics.length - 1].after = mult;
 
     return mult;
   }

@@ -1,66 +1,37 @@
+import { InfinitiesBreakdown } from "./infinities-breakdown";
 import { MultiplierTabIcons } from "./icons";
 
-// See index.js for documentation
 export const infinities = {
   total: {
     name: "Infinities gained per Crunch",
     isBase: true,
     multValue: () => gainedInfinities(),
-    // The earliest sources of infinity multipliers are ach87 and TS32, which may happen in either order
-    isActive: () => (Achievement(87).isUnlocked || PlayerProgress.eternityUnlocked()) &&
-      !EternityChallenge(4).isRunning && !Pelle.isDoomed,
+    transformValue: () => InfinitiesBreakdown.summary(),
+    isOrdered: true,
+    isActive: () => Achievement(87).isUnlocked || PlayerProgress.eternityUnlocked(),
     overlay: ["∞", "<i class='fa-solid fa-arrows-rotate' />"],
   },
-  achievement: {
-    name: "Achievements",
-    multValue: () => DC.D1.timesEffectsOf(
-      Achievement(87),
-      Achievement(131).effects.infinitiesGain,
-      Achievement(164)
-    ),
-    isActive: () => Achievement(87).isUnlocked,
-    icon: MultiplierTabIcons.ACHIEVEMENT,
-  },
-  timeStudy: {
-    name: "Time Study 32",
-    multValue: () => TimeStudy(32).effectOrDefault(1),
-    isActive: () => TimeStudy(32).isBought,
-    icon: MultiplierTabIcons.TIME_STUDY,
-  },
-  timeStudy2: {
-    name: "Time Study 191",
-    multValue: 2,
-    isActive: () => TimeStudy(191).isBought,
-    icon: MultiplierTabIcons.TIME_STUDY,
-  },
-  amplifierInf: {
-    name: "Reality Upgrade - Boundless Amplifier",
-    multValue: () => DC.D1.timesEffectsOf(RealityUpgrade(5)),
-    isActive: () => PlayerProgress.realityUnlocked() && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  realityUpgrades: {
-    name: "Reality Upgrade - Innumerably Construct",
-    multValue: () => DC.D1.timesEffectsOf(RealityUpgrade(7)),
-    isActive: () => PlayerProgress.realityUnlocked(),
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  glyph: {
-    name: "Equipped Glyphs",
-    multValue: () => getAdjustedGlyphEffect("infinityinfmult"),
-    isActive: () => PlayerProgress.realityUnlocked(),
-    icon: MultiplierTabIcons.GENERIC_GLYPH,
-  },
-  ra: {
-    name: "Ra Upgrade - Multiplier based on TT",
-    multValue: () => Ra.unlocks.continuousTTBoost.effects.infinity.effectOrDefault(1),
-    isActive: () => Ra.unlocks.continuousTTBoost.isUnlocked,
-    icon: MultiplierTabIcons.GENERIC_RA,
-  },
-  singularity: {
-    name: "Singularity Milestone - Power from Singularities",
-    powValue: () => SingularityMilestone.infinitiedPow.effectOrDefault(1),
-    isActive: () => SingularityMilestone.infinitiedPow.canBeApplied,
-    icon: MultiplierTabIcons.SINGULARITY,
-  },
+  base: { name: "Base / EC4 fixed gain", icon: MultiplierTabIcons.SINGULARITY },
+  achievement87: { name: "Achievement 87 (minimum ×1)", icon: MultiplierTabIcons.ACHIEVEMENT },
+  achievement131: { name: "Achievement 131 - Infinities gain", icon: MultiplierTabIcons.ACHIEVEMENT },
+  achievement164: { name: "Achievement 164", icon: MultiplierTabIcons.ACHIEVEMENT },
+  study32: { name: "Time Study 32", icon: MultiplierTabIcons.TIME_STUDY },
+  study191: { name: "Time Study 191 - Infinities gain", icon: MultiplierTabIcons.TIME_STUDY },
+  reality5: { name: "Reality Upgrade 5 - Boundless Amplifier", icon: MultiplierTabIcons.UPGRADE("reality") },
+  reality7: { name: "Reality Upgrade 7 - Innumerably Construct", icon: MultiplierTabIcons.UPGRADE("reality") },
+  glyph: { name: "Infinity-gain Glyph effects", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  ra: { name: "Ra - Time Theorem boost", icon: MultiplierTabIcons.GENERIC_RA },
+  nullUpgrade: { name: "Null Upgrade - Infinity gain", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  singularity: { name: "Singularity Milestone - Infinity gain power", icon: MultiplierTabIcons.SINGULARITY },
+  alphaEC10: { name: "Alpha - EC10 power", icon: MultiplierTabIcons.TIME_STUDY },
+  currencySurge: { name: "Resurgence - Infinities currency power", icon: MultiplierTabIcons.SINGULARITY },
+  chargedInfinityGen: { name: "Charged Infinity generator power", icon: MultiplierTabIcons.UPGRADE("infinity") },
+  traceMismatch: { name: "Untracked Infinity gain difference", icon: MultiplierTabIcons.SINGULARITY },
 };
+for (const [key, entry] of Object.entries(infinities)) {
+  if (key === "total") continue;
+  entry.transformValue = () => InfinitiesBreakdown.transform(key);
+  entry.isActive = true;
+  entry.multValue = 1;
+  entry.powValue = 1;
+}

@@ -1,69 +1,38 @@
-import { MultiplierTabHelper } from "./helper-functions";
 import { MultiplierTabIcons } from "./icons";
+import { TickspeedBreakdown } from "./tickspeed-breakdown";
 
-// See index.js for documentation
+// One-source-at-a-time marginal *final* effects, recomputed using the gameplay's
+// own galaxy count and multiplier functions. These are not additive and are never
+// presented as independent galaxy production or as a second source of Galaxy Power.
 export const galaxies = {
-  // Note: none of the galaxy types use the global multiplier that applies to all of them within multValue, which
-  // very slightly reduces performance impact and is okay because it's applied consistently
   antimatter: {
     name: "Antimatter Galaxies",
-    displayOverride: () => {
-      const num = player.galaxies.add(GalaxyGenerator.galaxies);
-      const mult = MultiplierTabHelper.globalGalaxyMult();
-      return `${formatInt(num)}, ${formatX(mult, 2, 2)} strength`;
-    },
-    multValue: () => Decimal.pow10(player.galaxies.add(GalaxyGenerator.galaxies)),
+    transformValue: () => TickspeedBreakdown.galaxySource("antimatter"),
     isActive: true,
     icon: MultiplierTabIcons.ANTIMATTER,
   },
+  generated: {
+    name: "Galaxy Generator - generated AG",
+    transformValue: () => TickspeedBreakdown.galaxySource("generated"),
+    isActive: true,
+    icon: MultiplierTabIcons.GALAXY,
+  },
   replicanti: {
-    name: "Replicanti Galaxies",
-    displayOverride: () => {
-      const num = Replicanti.galaxies.total;
-      let rg = Replicanti.galaxies.bought;
-      rg = rg.times(1 + Effects.sum(TimeStudy(132), TimeStudy(133)));
-      rg = rg.add(Replicanti.galaxies.extra);
-      rg = rg.add(Decimal.min(Replicanti.galaxies.bought, ReplicantiUpgrade.galaxies.value)
-        .times(Effects.sum(EternityChallenge(8).reward)));
-      const mult = rg.div(Decimal.max(num, 1)).times(MultiplierTabHelper.globalGalaxyMult());
-      return `${formatInt(num)}, ${formatX(mult, 2, 2)} strength`;
-    },
-    multValue: () => {
-      let rg = Replicanti.galaxies.bought;
-      rg = rg.times(1 + Effects.sum(TimeStudy(132), TimeStudy(133)));
-      rg = rg.add(Replicanti.galaxies.extra);
-      rg = rg.add(Decimal.min(Replicanti.galaxies.bought, ReplicantiUpgrade.galaxies.value)
-        .times(Effects.sum(EternityChallenge(8).reward)));
-      return Decimal.pow10(rg);
-    },
+    name: "Replicanti Galaxies (including extra and studies)",
+    transformValue: () => TickspeedBreakdown.galaxySource("replicanti"),
     isActive: () => Replicanti.areUnlocked,
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("replication"),
   },
   tachyon: {
-    name: "Tachyon Galaxies",
-    displayOverride: () => {
-      const num = player.dilation.totalTachyonGalaxies;
-      const alternation = Decimal.max(0, Replicanti.amount.log10().div(1e6))
-        .times(AlchemyResource.alternation.effectValue)
-        .add(1);
-      const mult = alternation.times(MultiplierTabHelper.globalGalaxyMult());
-      return `${formatInt(num)}, ${formatX(mult, 2, 2)} strength`;
-    },
-    multValue: () => {
-      const num = player.dilation.totalTachyonGalaxies;
-      const mult = Decimal.max(0, Replicanti.amount.log10().div(1e6))
-        .times(AlchemyResource.alternation.effectValue)
-        .add(1);
-      return Decimal.pow10(num.times(mult));
-    },
+    name: "Tachyon Galaxies (with Alternation)",
+    transformValue: () => TickspeedBreakdown.galaxySource("tachyon"),
     isActive: () => player.dilation.totalTachyonGalaxies.gt(0),
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("dilation"),
   },
-  nerfPelle: {
-    name: "Doomed Reality",
-    displayOverride: () => `All Galaxy strength /${formatInt(2)}`,
-    powValue: 0.5,
-    isActive: () => Pelle.isDoomed,
-    icon: MultiplierTabIcons.PELLE,
-  }
+  galactic: {
+    name: "Galactic Power - free galaxies",
+    transformValue: () => TickspeedBreakdown.galaxySource("galactic"),
+    isActive: () => GalacticPower.freeGalaxies.gt(0),
+    icon: MultiplierTabIcons.GALAXY,
+  },
 };

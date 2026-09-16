@@ -2,19 +2,39 @@ import { PlayerProgress } from "../../player-progress";
 
 import { MultiplierTabHelper } from "./helper-functions";
 import { MultiplierTabIcons } from "./icons";
+import { TimeDimensionBreakdown } from "./time-dimension-breakdown";
+
+function orderedTDEntry(name, key, icon, isOrdered = false) {
+  const transform = dim => (dim
+    ? TimeDimensionBreakdown.transform(dim, key)
+    : TimeDimensionBreakdown.aggregateTransform(key));
+  return {
+    name,
+    transformValue: transform,
+    displayOverride: dim => {
+      const data = transform(dim);
+      if (!data) return "";
+      if (data.aggregate) return "";
+      if (data.display) return data.display;
+      if (data.type === "multiply" && data.value !== undefined) return formatX(data.value, 2, 2);
+      if (data.type === "power" && data.value !== undefined) return formatPow(data.value, 2, 3);
+      return `${format(data.before, 2, 2)} ➜ ${format(data.after, 2, 2)}`;
+    },
+    isActive: dim => (dim ? TimeDimension(dim).isProducing : transform(dim) !== null),
+    icon,
+    isOrdered,
+  };
+}
 
 // See index.js for documentation
 export const TD = {
   total: {
     name: dim => {
-      if (dim) return `TD ${dim} Multiplier`;
+      if (dim) return `TD ${dim} Production`;
       if (EternityChallenge(7).isRunning) return "ID8 Production";
       return "Time Shard Production";
     },
-    displayOverride: dim => (dim
-      ? formatX(TimeDimension(dim).multiplier, 2)
-      : `${format(TimeDimension(1).productionPerSecond, 2)}/sec`
-    ),
+    displayOverride: dim => `${format(TimeDimension(dim ?? 1).productionPerSecond, 2)}/sec`,
     multValue: dim => (dim
       ? TimeDimension(dim).multiplier
       : TimeDimensions.all
@@ -33,6 +53,10 @@ export const TD = {
     isDilated: true,
     overlay: ["Δ", "<i class='fa-solid fa-cube' />"],
     icon: dim => MultiplierTabIcons.DIMENSION("TD", dim),
+    transformValue: dim => (dim
+      ? TimeDimensionBreakdown.summary(dim)
+      : TimeDimensionBreakdown.totalSummary()),
+    isOrdered: true,
   },
   purchase: {
     name: dim => (dim ? `Purchased TD ${dim}` : "Purchases"),
@@ -263,4 +287,173 @@ export const TD = {
     isActive: () => getAdjustedGlyphEffect("curseddimensions") !== 1,
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("cursed"),
   },
+
+  // Ordered Time Dimension production trace. The legacy entries remain available for other nested breakdowns, but
+  // the TD tab uses the exact multiplier/production order from TimeDimensionState.
+  baseAmount: orderedTDEntry(
+    dim => `TD ${dim} Amount`,
+    "base",
+    dim => MultiplierTabIcons.DIMENSION("TD", dim)
+  ),
+  commonEffects: orderedTDEntry(
+    "Common Multipliers",
+    "common",
+    MultiplierTabIcons.UPGRADE("eternity"),
+    true
+  ),
+  commonIAP: orderedTDEntry("Shop Tab Purchases", "commonIAP", MultiplierTabIcons.IAP),
+  commonAchievements: orderedTDEntry("Achievements", "commonAchievements", MultiplierTabIcons.ACHIEVEMENT, true),
+  achievement105: orderedTDEntry("Achievement 105", "achievement105", MultiplierTabIcons.ACHIEVEMENT),
+  achievement128: orderedTDEntry("Achievement 128", "achievement128", MultiplierTabIcons.ACHIEVEMENT),
+  commonTimeStudies: orderedTDEntry("Time Studies", "commonTimeStudies", MultiplierTabIcons.TIME_STUDY, true),
+  timeStudy93: orderedTDEntry("Time Study 93", "timeStudy93", MultiplierTabIcons.TIME_STUDY),
+  timeStudy103: orderedTDEntry("Time Study 103", "timeStudy103", MultiplierTabIcons.TIME_STUDY),
+  timeStudy151: orderedTDEntry("Time Study 151", "timeStudy151", MultiplierTabIcons.TIME_STUDY),
+  timeStudy221: orderedTDEntry("Time Study 221", "timeStudy221", MultiplierTabIcons.TIME_STUDY),
+  timeStudy301: orderedTDEntry("Time Study 301", "timeStudy301", MultiplierTabIcons.TIME_STUDY),
+  commonEternityChallenges: orderedTDEntry(
+    "Eternity Challenge Rewards",
+    "commonEternityChallenges",
+    MultiplierTabIcons.CHALLENGE("eternity"),
+    true
+  ),
+  eternityChallenge1: orderedTDEntry(
+    "Eternity Challenge 1",
+    "eternityChallenge1",
+    MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  eternityChallenge10: orderedTDEntry(
+    "Eternity Challenge 10",
+    "eternityChallenge10",
+    MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  commonEternityUpgrades: orderedTDEntry(
+    "Eternity Upgrades",
+    "commonEternityUpgrades",
+    MultiplierTabIcons.UPGRADE("eternity"),
+    true
+  ),
+  eternityUpgradeAchievements: orderedTDEntry(
+    "Achievement Multiplier Upgrade",
+    "eternityUpgradeAchievements",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  eternityUpgradeTheorems: orderedTDEntry(
+    "Unspent Time Theorems",
+    "eternityUpgradeTheorems",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  eternityUpgradeRealTime: orderedTDEntry(
+    "Days Played",
+    "eternityUpgradeRealTime",
+    MultiplierTabIcons.UPGRADE("eternity")
+  ),
+  commonRealityUpgrade: orderedTDEntry(
+    "Reality Upgrade - Temporal Transcendence",
+    "commonRealityUpgrade",
+    MultiplierTabIcons.UPGRADE("reality")
+  ),
+  commonAlchemy: orderedTDEntry("Dimensionality Alchemy", "commonAlchemy", MultiplierTabIcons.ALCHEMY),
+  commonPelle: orderedTDEntry("Pelle Chaos Rift", "commonPelle", MultiplierTabIcons.PELLE),
+  commonReplicanti: orderedTDEntry(
+    "Replicanti Multiplier",
+    "commonReplicanti",
+    MultiplierTabIcons.SPECIFIC_GLYPH("replication")
+  ),
+  ec9InfinityPower: orderedTDEntry(
+    "Eternity Challenge 9 Infinity Power Effect",
+    "ec9InfinityPower",
+    MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  commonNull: orderedTDEntry("Null Upgrade", "commonNull", MultiplierTabIcons.UPGRADE("imaginary")),
+
+  tierEffects: orderedTDEntry("Tier-specific Time Studies", "tierEffects", MultiplierTabIcons.TIME_STUDY, true),
+  tierTimeStudy11: orderedTDEntry("Time Study 11", "tierTimeStudy11", MultiplierTabIcons.TIME_STUDY),
+  tierTimeStudy73: orderedTDEntry("Time Study 73", "tierTimeStudy73", MultiplierTabIcons.TIME_STUDY),
+  tierTimeStudy227: orderedTDEntry("Time Study 227", "tierTimeStudy227", MultiplierTabIcons.TIME_STUDY),
+
+  orderedPurchase: orderedTDEntry("Purchases / Continuum", "purchase", MultiplierTabIcons.PURCHASE("TD"), true),
+  purchaseBaseOrdered: orderedTDEntry(
+    "Base per-purchase Multiplier", "purchaseBase", MultiplierTabIcons.PURCHASE("TD")
+  ),
+  purchaseGlyphSacrificeOrdered: orderedTDEntry(
+    "Time Glyph Sacrifice",
+    "purchaseGlyphSacrifice",
+    MultiplierTabIcons.SACRIFICE("time")
+  ),
+  purchaseImaginaryPowerOrdered: orderedTDEntry(
+    "Imaginary Upgrade - Recollection of Intrusion",
+    "purchaseImaginaryPower",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  purchaseSingularityPowerOrdered: orderedTDEntry(
+    "Singularity per-purchase Power",
+    "purchaseSingularityPower",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+
+  preDilationPowers: orderedTDEntry(
+    "Glyph and Global Powers", "preDilationPowers", MultiplierTabIcons.GENERIC_GLYPH, true
+  ),
+  glyphTimePower: orderedTDEntry("Time Glyph Power", "glyphTimePower", MultiplierTabIcons.GENERIC_GLYPH),
+  glyphEffarigPower: orderedTDEntry(
+    "Effarig Glyph Dimension Power", "glyphEffarigPower", MultiplierTabIcons.GENERIC_GLYPH
+  ),
+  glyphCursedPower: orderedTDEntry(
+    "Cursed Glyph Dimension Power", "glyphCursedPower", MultiplierTabIcons.SPECIFIC_GLYPH("cursed")
+  ),
+  alchemyTimePower: orderedTDEntry("Time Alchemy Power", "alchemyTimePower", MultiplierTabIcons.ALCHEMY),
+  raMomentumPower: orderedTDEntry("Ra Momentum", "raMomentumPower", MultiplierTabIcons.ALCHEMY),
+  imaginaryPower: orderedTDEntry(
+    "Imaginary Upgrade - Suspicion of Interference",
+    "imaginaryPower",
+    MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  pelleParadoxPower: orderedTDEntry("Pelle Paradox Rift", "pelleParadoxPower", MultiplierTabIcons.PELLE),
+  singularityDimensionPower: orderedTDEntry(
+    "Singularity Dimension Power", "singularityDimensionPower", MultiplierTabIcons.UPGRADE("imaginary")
+  ),
+  raTimeTheoremPower: orderedTDEntry("Ra Time Theorem Power", "raTimeTheoremPower", MultiplierTabIcons.ALCHEMY),
+  pellePackPower: orderedTDEntry("Pelle Expansion Pack Power", "pellePackPower", MultiplierTabIcons.PELLE),
+
+  dilationOrdered: orderedTDEntry("Dilation", "dilation", MultiplierTabIcons.UPGRADE("dilation")),
+  effarigOrdered: orderedTDEntry("Effarig's Reality", "effarig", MultiplierTabIcons.GENERIC_GLYPH),
+  vNerfOrdered: orderedTDEntry("V's Reality", "vNerf", MultiplierTabIcons.GENERIC_V),
+
+  postDilationPowers: orderedTDEntry(
+    "Post-Dilation Powers", "postDilationPowers", MultiplierTabIcons.UPGRADE("eternity"), true
+  ),
+  ascensionTimeStudy73Power: orderedTDEntry(
+    "Ascended Time Study 73", "ascensionTimeStudy73Power", MultiplierTabIcons.TIME_STUDY
+  ),
+  breakEternityPower: orderedTDEntry(
+    "Break Eternity TD Power", "breakEternityPower", MultiplierTabIcons.UPGRADE("infinity")
+  ),
+  alphaEC5Power: orderedTDEntry(
+    "Alpha EC Completion Reward", "alphaEC5Power", MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  alphaTier8Power: orderedTDEntry("Alpha TD8 Reward", "alphaTier8Power", MultiplierTabIcons.DIMENSION("TD", 8)),
+  replicantiSurgePower: orderedTDEntry(
+    "Duplicated Surge", "replicantiSurgePower", MultiplierTabIcons.SPECIFIC_GLYPH("replication")
+  ),
+  achievementSurgePower: orderedTDEntry("Achievement Surge", "achievementSurgePower", MultiplierTabIcons.ACHIEVEMENT),
+
+  etherealOrdered: orderedTDEntry("Ethereal Stars", "ethereal", MultiplierTabIcons.UPGRADE("imaginary")),
+  overchargeOrdered: orderedTDEntry("Endgame Overcharge", "overcharge", MultiplierTabIcons.UPGRADE("imaginary")),
+  overflow1Ordered: orderedTDEntry("Time Dimension Overflow", "overflow1", MultiplierTabIcons.DIMENSION("TD")),
+  overflow2Ordered: orderedTDEntry("Time Dimension Second Overflow", "overflow2", MultiplierTabIcons.DIMENSION("TD")),
+  tickspeedOrdered: orderedTDEntry("Tickspeed (EC7)", "tickspeed", MultiplierTabIcons.TICKSPEED),
+  timeShardGlyphPowerOrdered: orderedTDEntry(
+    "Time Shard Glyph Power", "timeShardGlyphPower", MultiplierTabIcons.GENERIC_GLYPH
+  ),
+  ec11OverrideOrdered: orderedTDEntry(
+    "Eternity Challenge 11 Override", "ec11Override", MultiplierTabIcons.CHALLENGE("eternity")
+  ),
+  alphaProductionBypassOrdered: orderedTDEntry(
+    "Alpha Production Override", "alphaProductionBypass", MultiplierTabIcons.DIMENSION("TD")
+  ),
+  traceMismatchOrdered: orderedTDEntry(
+    "Untracked TD Formula Difference", "traceMismatch", MultiplierTabIcons.DIMENSION("TD")
+  ),
+
 };

@@ -1,42 +1,30 @@
+import { EternitiesBreakdown } from "./eternities-breakdown";
 import { MultiplierTabIcons } from "./icons";
 
-// See index.js for documentation
 export const eternities = {
   total: {
     name: "Eternities gained per Eternity",
     isBase: true,
     multValue: () => gainedEternities(),
-    isActive: () => (PlayerProgress.realityUnlocked() || Achievement(113).isUnlocked) && !Pelle.isDoomed,
+    transformValue: () => EternitiesBreakdown.summary(),
+    isOrdered: true,
+    isActive: () => PlayerProgress.realityUnlocked() || Achievement(113).isUnlocked,
     overlay: ["Δ", "<i class='fa-solid fa-arrows-rotate' />"],
   },
-  achievement: {
-    name: "Achievement 113",
-    multValue: () => Achievement(113).effectOrDefault(1),
-    isActive: () => Achievement(113).canBeApplied,
-    icon: MultiplierTabIcons.ACHIEVEMENT,
-  },
-  amplifierEter: {
-    name: "Reality Upgrade - Eternal Amplifier",
-    multValue: () => RealityUpgrade(3).effectOrDefault(1),
-    isActive: () => RealityUpgrade(3).canBeApplied,
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  glyph: {
-    name: "Equipped Glyphs",
-    multValue: () => getAdjustedGlyphEffect("timeetermult"),
-    isActive: () => PlayerProgress.realityUnlocked(),
-    icon: MultiplierTabIcons.GENERIC_GLYPH,
-  },
-  ra: {
-    name: "Ra Upgrade - Multiplier based on TT",
-    multValue: () => Ra.unlocks.continuousTTBoost.effects.eternity.effectOrDefault(1),
-    isActive: () => Ra.unlocks.continuousTTBoost.isUnlocked,
-    icon: MultiplierTabIcons.GENERIC_RA,
-  },
-  alchemy: {
-    name: "Alchemy Resource - Eternity",
-    powValue: () => AlchemyResource.eternity.effectOrDefault(1),
-    isActive: () => AlchemyResource.eternity.canBeApplied,
-    icon: MultiplierTabIcons.ALCHEMY,
-  },
+  base: { name: "Base ×1", icon: MultiplierTabIcons.ACHIEVEMENT },
+  achievement102: { name: "Achievement 102", icon: MultiplierTabIcons.ACHIEVEMENT },
+  achievement113: { name: "Achievement 113", icon: MultiplierTabIcons.ACHIEVEMENT },
+  reality3: { name: "Reality Upgrade 3 - Eternal Amplifier", icon: MultiplierTabIcons.UPGRADE("reality") },
+  glyph: { name: "Eternity-gain Glyph effects", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  alchemy: { name: "Alchemy Resource - Eternity power", icon: MultiplierTabIcons.ALCHEMY },
+  nullUpgrade: { name: "Null Upgrade - Eternity gain", icon: MultiplierTabIcons.ALCHEMY },
+  currencySurge: { name: "Resurgence - Eternities currency power", icon: MultiplierTabIcons.ALCHEMY },
+  traceMismatch: { name: "Untracked Eternity gain difference", icon: MultiplierTabIcons.ALCHEMY },
 };
+for (const [key, entry] of Object.entries(eternities)) {
+  if (key === "total") continue;
+  entry.transformValue = () => EternitiesBreakdown.transform(key);
+  entry.isActive = true;
+  entry.multValue = 1;
+  entry.powValue = 1;
+}

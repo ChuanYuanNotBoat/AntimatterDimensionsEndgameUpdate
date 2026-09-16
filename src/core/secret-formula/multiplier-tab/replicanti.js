@@ -1,87 +1,44 @@
+import { ReplicantiBreakdown } from "./replicanti-breakdown";
 import { MultiplierTabIcons } from "./icons";
 
-// See index.js for documentation
+// Gameplay calls this "external" speed: over-cap interval scaling and celestial
+// time mechanics happen outside totalReplicantiSpeedMult(). Do not claim to
+// decompose the actual number of replicanti generated per second.
 export const replicanti = {
   total: {
-    name: "Replicanti Speed",
+    name: "Replicanti external speed multiplier",
     multValue: () => totalReplicantiSpeedMult(Replicanti.amount.gt(replicantiCap())),
+    transformValue: () => ReplicantiBreakdown.summary(),
+    isOrdered: true,
     isActive: () => PlayerProgress.eternityUnlocked(),
     overlay: ["Ξ"],
   },
-  achievement1: {
-    name: "Achievement 81",
-    multValue: 3,
-    isActive: () => Achievement(81).canBeApplied && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.ACHIEVEMENT,
-  },
-  achievement2: {
-    name: "Achievement 134",
-    // This is explicitly 2 in the replicanti code as well, inside of a replicanti amount check
-    multValue: 2,
-    isActive: () => Achievement(134).canBeApplied && Replicanti.amount.lte(replicantiCap()) && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.ACHIEVEMENT,
-  },
-  timeStudy: {
-    name: "Time Studies",
-    multValue: () => {
-      const preReality = Effects.product(TimeStudy(62), TimeStudy(213)) * (TimeStudy(132).isBought ? 1.5 : 1);
-      return preReality * (Perk.studyPassive.isBought && TimeStudy(132).isBought ? 2 : 1);
-    },
-    isActive: () => PlayerProgress.eternityUnlocked() && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.TIME_STUDY,
-  },
-  glyph: {
-    name: "Glyph Effects",
-    multValue: () => {
-      const baseEffect = (Pelle.isDoomed ? DC.D1 : getAdjustedGlyphEffect("replicationspeed"))
-        .times(Pelle.specialGlyphEffect.replication);
-      const alteredEffect = Decimal.clampMin(
-        Decimal.log10(Replicanti.amount).times(getSecondaryGlyphEffect("replicationdtgain")), 1);
-      return GlyphAlteration.isAdded("replication") ? baseEffect.times(alteredEffect) : baseEffect;
-    },
-    isActive: () => PlayerProgress.realityUnlocked() && (!Pelle.isDoomed || Pelle.specialGlyphEffect.replication.gt(1)),
-    icon: MultiplierTabIcons.GENERIC_GLYPH,
-  },
-  amplifierRep: {
-    name: "Reality Upgrade - Replicative Amplifier",
-    multValue: () => RealityUpgrade(2).effectOrDefault(1),
-    isActive: () => PlayerProgress.realityUnlocked() && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  realityUpgrade1: {
-    name: "Reality Upgrade - Cosmically Duplicate",
-    multValue: () => RealityUpgrade(6).effectOrDefault(1),
-    isActive: () => PlayerProgress.realityUnlocked() && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  realityUpgrade2: {
-    name: "Reality Upgrade - Replicative Rapidity",
-    multValue: () => RealityUpgrade(23).effectOrDefault(1),
-    isActive: () => PlayerProgress.realityUnlocked() && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.UPGRADE("reality"),
-  },
-  alchemy: {
-    name: "Alchemy Resource - Replication",
-    multValue: () => AlchemyResource.replication.effectOrDefault(1),
-    isActive: () => Ra.unlocks.unlockGlyphAlchemy.canBeApplied && !Pelle.isDoomed,
-    icon: MultiplierTabIcons.ALCHEMY,
-  },
-  ra: {
-    name: "Ra Upgrade - Multiplier based on TT",
-    multValue: () => Ra.unlocks.continuousTTBoost.effects.replicanti.effectOrDefault(1),
-    isActive: () => Ra.unlocks.continuousTTBoost.isUnlocked,
-    icon: MultiplierTabIcons.GENERIC_RA,
-  },
-  pelle: {
-    name: "Pelle Strike - Decay Rift",
-    multValue: () => PelleRifts.decay.effectValue,
-    isActive: () => Pelle.isDoomed && PelleRifts.decay.effectValue.gt(1),
-    icon: MultiplierTabIcons.PELLE,
-  },
-  iap: {
-    name: "Shop Tab Purchases",
-    multValue: () => ShopPurchase.replicantiPurchases.currentMult,
-    isActive: () => ShopPurchaseData.totalSTD > 0 && ShopPurchase.replicantiPurchases.currentMult > 1,
-    icon: MultiplierTabIcons.IAP,
-  },
+  base: { name: "Base ×1", icon: MultiplierTabIcons.SPECIFIC_GLYPH("replication") },
+  achievement1: { name: "Achievement 81", icon: MultiplierTabIcons.ACHIEVEMENT },
+  achievement2: { name: "Achievement 134 (below cap)", icon: MultiplierTabIcons.ACHIEVEMENT },
+  study62: { name: "Time Study 62", icon: MultiplierTabIcons.TIME_STUDY },
+  study213: { name: "Time Study 213", icon: MultiplierTabIcons.TIME_STUDY },
+  study132: { name: "Time Study 132 and Passive perk", icon: MultiplierTabIcons.TIME_STUDY },
+  glyph: { name: "Replication speed Glyph", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  glyphAlteration: { name: "Replication Glyph alteration (DT multiplier)", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  pelleGlyph: { name: "Pelle special replication Glyph", icon: MultiplierTabIcons.PELLE },
+  pelleAlteration: { name: "Pelle-restored Replication Glyph alteration", icon: MultiplierTabIcons.PELLE },
+  amplifierRep: { name: "Reality Upgrade 2 - Replicative Amplifier", icon: MultiplierTabIcons.UPGRADE("reality") },
+  realityUpgrade1: { name: "Reality Upgrade 6 - Cosmically Duplicate", icon: MultiplierTabIcons.UPGRADE("reality") },
+  realityUpgrade2: { name: "Reality Upgrade 23 - Replicative Rapidity", icon: MultiplierTabIcons.UPGRADE("reality") },
+  alchemy: { name: "Alchemy - Replication", icon: MultiplierTabIcons.ALCHEMY },
+  ra: { name: "Ra - Time Theorem boost", icon: MultiplierTabIcons.GENERIC_RA },
+  pelle: { name: "Pelle - Decay Rift", icon: MultiplierTabIcons.PELLE },
+  iap: { name: "Shop - Replicanti purchases", icon: MultiplierTabIcons.IAP },
+  nullUpgrade: { name: "Null Upgrade - Replicanti speed", icon: MultiplierTabIcons.GENERIC_GLYPH },
+  traceMismatch: { name: "Untracked external speed difference", icon: MultiplierTabIcons.SPECIFIC_GLYPH("replication") },
 };
+
+// Every row uses the actual ordered transform. In particular, inactive Pelle
+// restorations must not display the pre-Pelle multipliers from a stale formula.
+for (const [key, entry] of Object.entries(replicanti)) {
+  if (key === "total") continue;
+  entry.transformValue = () => ReplicantiBreakdown.transform(key);
+  entry.isActive = true;
+  entry.multValue = 1;
+}
