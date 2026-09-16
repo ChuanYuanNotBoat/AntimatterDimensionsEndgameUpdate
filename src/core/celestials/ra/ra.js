@@ -392,9 +392,12 @@ export const Ra = {
     this.updateAlchemyFlow(realityRealTime);
   },
   get alchemyResourceCap() {
-    return (ExpansionPack.effarigPack.isBought && !player.disablePostReality)
+    const cap = (ExpansionPack.effarigPack.isBought && !player.disablePostReality)
       ? Decimal.max(25000, player.records.bestEndgame.glyphLevel.div(3).times(Ra.unlocks.alchemyCapIncrease.effectOrDefault(1))).toNumber()
       : 25000 * Ra.unlocks.alchemyCapIncrease.effectOrDefault(1);
+    // Alchemy amounts are saved as native Numbers, not Decimals. An expanded
+    // cap greater than Number.MAX_VALUE cannot be stored by the player guard.
+    return Math.min(cap, Number.MAX_VALUE);
   },
   get momentumValue() {
     const hoursFromUnlock = EffarigUnlock.maxMomentum.isUnlocked

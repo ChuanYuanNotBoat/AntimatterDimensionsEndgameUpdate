@@ -157,19 +157,23 @@ class AlchemyReaction {
 
   // Check each reagent for if a full reaction would drop it below the product amount.  If so, reduce reaction yield
   get actualYield() {
-    // Assume a full reaction to see what the maximum possible product is
-    const maxFromReaction = this.baseProduction * this.reactionYield * this.reactionEfficiency;
-    const prodBefore = this._product.amount;
-    const prodAfter = prodBefore + maxFromReaction;
-    let cappedYield = this.reactionYield;
+    const requestedYield = this.reactionYield;
+    if (!(requestedYield > 0)) return 0;
+
+    // Reagent after reaction >= product after reaction gives:
+    //   yield <= (reagent - product) / (reagent cost + product per yield).
+    // Avoid computing hypothetical post-reaction balances: at very high alchemy
+    // caps these intermediate products overflow to Infinity, and the previous
+    // (yield * difference) / (difference - difference) becomes Infinity/Infinity = NaN.
+    const production = this.reactionProduction;
+    let cappedYield = requestedYield;
+    const productAmount = this._product.amount;
     for (const reagent of this._reagents) {
-      const reagentBefore = reagent.resource.amount;
-      const reagentAfter = reagent.resource.amount - this.reactionYield * reagent.cost;
-      const diffBefore = reagentBefore - prodBefore;
-      const diffAfter = reagentAfter - prodAfter;
-      cappedYield = Math.min(cappedYield, this.reactionYield * diffBefore / (diffBefore - diffAfter));
+      const excess = reagent.resource.amount - productAmount;
+      if (!(excess > 0)) return 0;
+      cappedYield = Math.min(cappedYield, excess / (reagent.cost + production));
     }
-    return Math.clampMin(cappedYield, 0);
+    return cappedYield;
   }
 
   // Assign reactions priority in descending order based on the largest reagent total after the reaction.  The logic
@@ -213,14 +217,20 @@ class AlchemyReaction {
   // Cap products at the minimum amount of all reagents before the reaction occurs, eg. 200Ξ and 350Ψ will not bring
   // ω above 200.  In fact, since some Ξ will be used during the reaction, the actual cap will be a bit lower.
   combineReagents() {
-    if (!this.isActive || this.reactionYield === 0) return;
+    if (!this.isActive || !(this.reactionYield > 0)) return;
     const unpredictabilityEffect = AlchemyResource.unpredictability.effectValue;
-    const times = Math.clampMax(1 + poissonDistribution(unpredictabilityEffect / (1 - unpredictabilityEffect)), 50);
-    const cap = this._product.cap;
+    // At very large resource caps this probability rounds to exactly 1;
+    // avoid feeding Infinity into the Poisson sampler in that case.
+    const times = unpredictabilityEffect >= 1 ? 50 :
+      Math.clampMax(1 + poissonDistribution(unpredictabilityEffect / (1 - unpredictabilityEffect)), 50);
+    const cap = Math.min(this._product.cap, Number.MAX_VALUE);
     for (let i = 0; i < times; i++) {
       const reactionYield = this.actualYield;
+      // No more reaction is possible once a reagent catches up to the product;
+      // continuing used to consume NaN or create free product via the 0.05 floor.
+      if (!(reactionYield > 0)) break;
       for (const reagent of this._reagents) {
-        reagent.resource.amount -= reactionYield * reagent.cost;
+        reagent.resource.amount = Math.max(0, reagent.resource.amount - reactionYield * reagent.cost);
       }
       // The minimum reaction yield is 0.05 so the cap is actually reached
       const effectiveYield = Math.clampMin(reactionYield * this.reactionProduction, 0.05);
