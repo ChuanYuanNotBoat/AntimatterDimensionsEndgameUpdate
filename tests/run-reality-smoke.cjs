@@ -14,7 +14,8 @@ function optionsFrom(argv) {
     stepMs: 50,
     mode: 'auto',
     stressSingularities: false,
-    stressDarkEnergy: false
+    stressDarkEnergy: false,
+    stressBulkSingularity: false
   };
   let hasFile = false;
   for (let i = 0; i < argv.length; i++) {
@@ -26,6 +27,7 @@ function optionsFrom(argv) {
     else if (arg === '--manual') options.mode = 'manual';
     else if (arg === '--stress-singularities') options.stressSingularities = true;
     else if (arg === '--stress-dark-energy') options.stressDarkEnergy = true;
+    else if (arg === '--stress-bulk-singularity') options.stressBulkSingularity = true;
     else if (!arg.startsWith('-') && !hasFile) { options.file = arg; hasFile = true; }
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -47,6 +49,7 @@ async function run() {
   if (options.help) {
     console.log('Usage: node tests/run-reality-smoke.cjs [save.txt] [--url http://127.0.0.1:8080/]');
     console.log('       [--ticks 100] [--step-ms 50] [--manual] [--stress-singularities] [--stress-dark-energy]');
+    console.log('       [--stress-bulk-singularity]');
     console.log('Runs the real ADE game loop and Reality in a disposable browser context.');
     return;
   }
@@ -81,14 +84,15 @@ async function run() {
     page.on('pageerror', error => pageErrors.push(error.stack || error.message));
     console.log(`Fixture: ${path.basename(filename)} | ticks=${options.ticks} | ${options.mode} Reality` +
       (options.stressSingularities ? ' | synthetic extreme singularities' : '') +
-      (options.stressDarkEnergy ? ' | synthetic extreme Dark Energy production' : ''));
+      (options.stressDarkEnergy ? ' | synthetic extreme Dark Energy production' : '') +
+      (options.stressBulkSingularity ? ' | synthetic bulk Singularity timing' : ''));
     await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => Boolean(window.GameStorage && window.GameSaveSerializer &&
       window.GameIntervals && window.gameLoop && window.player && window.isRealityAvailable &&
       window.autoReality && window.processManualReality), null, { timeout: 20000 });
 
     const outcome = await page.evaluate(async ({ saveText: text, ticks, stepMs, mode,
-      stressSingularities, stressDarkEnergy }) => {
+      stressSingularities, stressDarkEnergy, stressBulkSingularity }) => {
       let phase = 'prepare';
       let tick = 0;
       const isFiniteDecimal = value => value && [value.sign, value.layer, value.mag].every(Number.isFinite);
@@ -137,7 +141,10 @@ async function run() {
           ['ttGlyphEffect', () => window.getAdjustedGlyphEffect('dilationTTgen')],
           ['ttDilationGenerator', () => window.DilationUpgrade.ttGenerator.effectOrDefault(window.DC.D0)],
           ['ttSingularityPower', () => window.SingularityMilestone.theoremPowerFromSingularities.effectOrDefault(1)],
-          ['ttAlphaPower', () => window.AlphaUnlocks.timeTheoremGeneration.effects.buff.effectOrDefault(1)]
+          ['ttAlphaPower', () => window.AlphaUnlocks.timeTheoremGeneration.effects.buff.effectOrDefault(1)],
+          ['uncappedRM', () => window.MachineHandler.uncappedRM],
+          ['baseIMCap', () => window.MachineHandler.baseIMCap],
+          ['hardcapIM', () => window.MachineHandler.hardcapIM]
         ]) {
           try { details[name] = describe(fn()); } catch (error) { details[name] = error.message; }
         }
@@ -193,6 +200,28 @@ async function run() {
             throw new Error(`Dark Energy became nonfinite: ${describe(window.Currency.darkEnergy.value)}`);
           }
         }
+        if (stressBulkSingularity) {
+          phase = 'synthetic-bulk-singularity-scenario';
+          const originalTime = Object.getOwnPropertyDescriptor(window.Singularity, 'timePerCondense');
+          if (!originalTime) throw new Error('Unable to override Singularity time for bulk Autobuyer test');
+          try {
+            window.player.auto.bulkSingularity.lowerBound = 0.1;
+            window.player.auto.bulkSingularity.hasLowerBound = true;
+            window.player.auto.bulkSingularity.hasUpperBound = false;
+            window.Currency.singularities.value = window.DC.E2;
+            window.player.celestials.laitela.singularityCapIncreases = window.DC.BEMAX;
+            Object.defineProperty(window.Singularity, 'timePerCondense', {
+              configurable: true,
+              get: () => window.DC.D0
+            });
+            window.Autobuyer.bulkSingularity.tick();
+          } finally {
+            Object.defineProperty(window.Singularity, 'timePerCondense', originalTime);
+          }
+          if (!isFiniteDecimal(window.player.celestials.laitela.singularityCapIncreases)) {
+            throw new Error('Bulk Singularity Autobuyer wrote a nonfinite cap-increase count');
+          }
+        }
         const before = new window.Decimal(window.player.realities);
         const startedReady = window.isRealityAvailable();
         phase = 'gameLoop';
@@ -231,7 +260,8 @@ async function run() {
         window.GameIntervals.stop();
       }
     }, { saveText, ticks: options.ticks, stepMs: options.stepMs, mode: options.mode,
-      stressSingularities: options.stressSingularities, stressDarkEnergy: options.stressDarkEnergy });
+      stressSingularities: options.stressSingularities, stressDarkEnergy: options.stressDarkEnergy,
+      stressBulkSingularity: options.stressBulkSingularity });
 
     await page.waitForTimeout(100);
     if (pageErrors.length > 0) {

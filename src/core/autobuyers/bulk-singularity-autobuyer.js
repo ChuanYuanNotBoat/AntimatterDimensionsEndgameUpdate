@@ -1,4 +1,5 @@
 import { AutobuyerState } from "./autobuyer";
+import { boundedPositiveSum } from "../finite-decimal";
 
 export class BulkSingularityAutobuyerState extends AutobuyerState {
   get data() {
@@ -61,8 +62,22 @@ export class BulkSingularityAutobuyerState extends AutobuyerState {
       }
 
       if (Singularity.timePerCondense.lt(this.lowerBound) && this.data.hasLowerBound) {
-        const bulk = Decimal.floor(Decimal.log10(Singularity.timePerCondense.div(this.lowerBound).recip())).add(1);
-        player.celestials.laitela.singularityCapIncreases = player.celestials.laitela.singularityCapIncreases.add(bulk);
+        const time = Singularity.timePerCondense;
+        // log10(0) is NaN in break_eternity. A zero duration means the exact
+        // count exceeds the Decimal type's representable range, so use its
+        // existing representation boundary instead of evaluating that log.
+        const bulk = time.eq(0) ? DC.BEMAX : (() => {
+          const ratio = time.div(this.lowerBound).recip();
+          // Retain the original ratio calculation whenever it is representable.
+          // At extreme rates it can underflow to zero before reciprocal(), even
+          // though the logarithmic ratio still has a valid Decimal value.
+          const logRatio = Decimal.isFinite(ratio)
+            ? Decimal.log10(ratio)
+            : Decimal.log10(this.lowerBound).sub(Decimal.log10(time));
+          return Decimal.floor(logRatio).add(1);
+        })();
+        player.celestials.laitela.singularityCapIncreases = boundedPositiveSum(
+          player.celestials.laitela.singularityCapIncreases, bulk);
       }
     }
   }
