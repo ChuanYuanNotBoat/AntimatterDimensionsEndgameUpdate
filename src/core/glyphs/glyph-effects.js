@@ -130,7 +130,7 @@ export function getActiveGlyphEffects() {
   // Numerically combine cursed effects with other glyph effects which directly conflict with them
   const cursedEffects = ["cursedgalaxies", "curseddimensions", "cursedEP"];
   const conflictingEffects = ["realitygalaxies", "effarigdimensions", "timeEP"];
-  const combineFunction = [GlyphCombiner.multiply, GlyphCombiner.multiply, GlyphCombiner.multiplyDecimal];
+  const combineFunction = [GlyphCombiner.multiply, GlyphCombiner.multiplyDecimal, GlyphCombiner.multiplyDecimal];
   for (let i = 0; i < cursedEffects.length; i++) {
     if (effectNames.includes(cursedEffects[i]) && effectNames.includes(conflictingEffects[i])) {
       const combined = combineFunction[i]([getAdjustedGlyphEffect(cursedEffects[i]),

@@ -32,7 +32,7 @@ export const galaxies = {
   galactic: {
     name: "Galactic Power - free galaxies",
     transformValue: () => TickspeedBreakdown.galaxySource("galactic"),
-    isActive: () => GalacticPower.freeGalaxies.gt(0),
+    isActive: () => GalacticPowers.freeGalaxies.isUnlocked,
     icon: MultiplierTabIcons.GALAXY,
   },
 };

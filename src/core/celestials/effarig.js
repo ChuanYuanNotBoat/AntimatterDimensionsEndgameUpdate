@@ -166,9 +166,9 @@ export const Effarig = {
     return Decimal.pow10(Decimal.pow(base, this.multDilation));
   },
   get bonusRG() {
-    if (Pelle.isDoomed && !PelleCelestialUpgrade.maxRGIncrease.canBeApplied) return 0;
+    if (Pelle.isDoomed && !PelleCelestialUpgrade.maxRGIncrease.canBeApplied) return DC.D0;
     // Will return 0 if Effarig Infinity is uncompleted
-    return Decimal.floor(replicantiCap().pLog10().div(LOG10_MAX_VALUE).sub(1)).toNumber();
+    return Decimal.floor(replicantiCap().pLog10().div(LOG10_MAX_VALUE).sub(1));
   },
   quotes: Quotes.effarig,
   symbol: "Ϙ"

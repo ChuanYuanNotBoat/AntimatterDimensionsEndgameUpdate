@@ -1,4 +1,5 @@
 import { BitUpgradeState } from "../game-mechanics";
+import { boundedPositivePower, boundedPositiveProduct } from "../finite-decimal";
 import { GameDatabase } from "../secret-formula/game-database";
 
 import { Quotes } from "./quotes";
@@ -287,7 +288,11 @@ export const Tesseracts = {
   },
 
   get rawExtra() {
-    return (this.bought * (SingularityMilestone.tesseractMultFromSingularities.effectOrDefault(1) - 1)) + Effects.sum(EndgameMastery(53));
+    const singularityMultiplier = SingularityMilestone.tesseractMultFromSingularities.effectOrDefault(1);
+    // A zero Tesseract count cannot receive multiplicative free Tesseracts, even if
+    // the singularity effect is too large for a native Number (0 * Infinity is NaN).
+    const singularityExtra = this.bought === 0 ? 0 : this.bought * (singularityMultiplier - 1);
+    return singularityExtra + Effects.sum(EndgameMastery(53));
   },
 
   get freeSoftcapStart() {
@@ -295,7 +300,26 @@ export const Tesseracts = {
   },
 
   get extra() {
-    return Math.max(Math.max((this.rawExtra - this.freeSoftcapStart) * (1 / (1 + ((this.rawExtra - this.freeSoftcapStart) / this.freeSoftcapStart))), 0) + Math.min(this.rawExtra, this.freeSoftcapStart), Alpha.isDestroyed ? (Math.min(this.rawExtra, this.freeSoftcapStart) * (Math.log10(Math.max(this.rawExtra - this.freeSoftcapStart, 1)) + 1)) : 0);
+    const raw = this.rawExtra;
+    const start = this.freeSoftcapStart;
+    if (Number.isNaN(raw) || Number.isNaN(start)) {
+      throw new Error("Invalid Tesseract softcap input");
+    }
+    if (raw <= 0 || start <= 0) return 0;
+    // Below the threshold, both the regular and Alpha-destroyed formulas equal raw.
+    // In particular a finite raw value with an overflowed threshold must stay raw.
+    if (raw <= start) return Math.min(raw, Number.MAX_VALUE);
+
+    // For raw > start, the original (raw - start) / (1 + (raw - start) / start)
+    // equals start * (1 - start / raw). This form avoids Infinity / Infinity,
+    // and also avoids losing the softcap contribution when raw / start overflows.
+    const regular = start * (2 - start / raw);
+    const destroyed = Alpha.isDestroyed
+      ? start * (Math.log10(Math.max(raw - start, 1)) + 1)
+      : 0;
+    // Tesseract counts feed Number-based gameplay formulas. An overflowing count
+    // must saturate to a representable Number instead of contaminating IP with NaN.
+    return Math.min(Math.max(regular, destroyed), Number.MAX_VALUE);
   },
 
   get totalMult() {
@@ -304,19 +328,38 @@ export const Tesseracts = {
   },
 
   get effectiveCount() {
-    return (this.bought + this.extra) * this.totalMult;
+    const count = (this.bought + this.extra) * this.totalMult;
+    if (Number.isNaN(count)) throw new Error("Invalid effective Tesseract count");
+    return Math.min(count, Number.MAX_VALUE);
   },
 
   buyTesseract() {
-    if (!this.canBuyTesseract) return;
-    if (GameEnd.creditsEverClosed) return;
-    player.celestials.enslaved.tesseracts++;
+    if (!this.canBuyTesseract || GameEnd.creditsEverClosed) return;
+    // The save field is a Number, so one purchase must advance by exactly one integer.
+    if (!Number.isSafeInteger(this.bought) || this.bought >= Number.MAX_SAFE_INTEGER) return;
+    player.celestials.enslaved.tesseracts = this.bought + 1;
   },
 
   buyMaxTesseract() {
-    if (!this.canBuyTesseract) return;
-    if (GameEnd.creditsEverClosed) return;
-    player.celestials.enslaved.tesseracts += this.amountNeeded.toNumber();
+    if (!this.canBuyTesseract || GameEnd.creditsEverClosed) return;
+    const affordable = this.canBeBoughtRaw;
+    // An invalid upstream inverse must remain a diagnostic, not become a free purchase.
+    if ([affordable.sign, affordable.layer, affordable.mag].some(x => !Number.isFinite(x)) ||
+        affordable.lt(0)) {
+      throw new Error("Invalid affordable Tesseract count");
+    }
+    // Do not turn an unrepresentable inverse into MAX_SAFE_INTEGER purchases:
+    // nextCost only establishes that one further Tesseract is affordable.
+    const target = affordable.gt(Number.MAX_SAFE_INTEGER) ? NaN : Decimal.floor(affordable).toNumber();
+    if (!Number.isSafeInteger(target) || target <= this.bought) {
+      if (!this._warnedUnrepresentableBulk) {
+        console.warn("Tesseract bulk inverse is unrepresentable or not ahead; buying one verified Tesseract");
+        this._warnedUnrepresentableBulk = true;
+      }
+      this.buyTesseract();
+      return;
+    }
+    player.celestials.enslaved.tesseracts = target;
   },
 
   costs(index) {
@@ -325,21 +368,29 @@ export const Tesseracts = {
   },
 
   get nextCost() {
-    return this.costs(this.bought);
+    return this.bought >= Number.MAX_SAFE_INTEGER ? DC.BEMAX : this.costs(this.bought);
   },
 
   get canBuyTesseract() {
-    return Enslaved.isCompleted && Currency.infinityPoints.gte(Tesseracts.nextCost) && !player.disablePostReality;
+    return Enslaved.isCompleted && Number.isSafeInteger(this.bought) &&
+      this.bought < Number.MAX_SAFE_INTEGER && Currency.infinityPoints.gte(this.nextCost) && !player.disablePostReality;
   },
 
   capIncrease(count = this.bought, extra = this.extra, mult = this.totalMult) {
     const totalCount = (count + extra) * mult;
-    const base = totalCount < 1 ? DC.D0 : Decimal.pow(Decimal.pow(2, Octeracts.cubeBoost()), totalCount).times(250e3);
-    return base.times(AlchemyResource.boundless.effectValue + 1).times((ExpansionPack.enslavedPack.isBought && !player.disablePostReality) ? 2 : 1);
+    if (Number.isNaN(totalCount)) throw new Error("Invalid Tesseract cap input");
+    // The cap also consumes a Number exponent; never pass Infinity to Decimal.pow.
+    const finiteCount = Math.min(totalCount, Number.MAX_VALUE);
+    const base = finiteCount < 1 ? DC.D0 : boundedPositiveProduct(
+      boundedPositivePower(boundedPositivePower(2, Octeracts.cubeBoost()), finiteCount), 250e3);
+    return boundedPositiveProduct(boundedPositiveProduct(base,
+      new Decimal(AlchemyResource.boundless.effectValue).add(1)),
+    (ExpansionPack.enslavedPack.isBought && !player.disablePostReality) ? 2 : 1);
   },
 
   get nextTesseractIncrease() {
-    return this.capIncrease(this.bought + 1).sub(this.capIncrease(this.bought));
+    return this.bought >= Number.MAX_SAFE_INTEGER ? DC.D0 :
+      this.capIncrease(this.bought + 1).sub(this.capIncrease(this.bought));
   },
 };
 

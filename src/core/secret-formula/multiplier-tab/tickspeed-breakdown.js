@@ -11,9 +11,11 @@ import { MultiplierTabHelper } from "./helper-functions";
 // It is important to operate on the *interval* and only invert at display time: galaxy
 // strength is an exponent of the per-purchase interval, not a free-standing x multiplier.
 function snapshot() {
-  const galaxyCount = effectiveBaseGalaxies();
+  const galaxyDetails = {};
+  const galaxyCount = effectiveBaseGalaxies(null, galaxyDetails);
   return {
     galaxyCount,
+    galaxyDetails,
     noGalaxyMultiplier: getTickSpeedMultiplier(DC.D0),
     galaxyMultiplier: getTickSpeedMultiplier(galaxyCount),
     baseInterval: DC.E3.timesEffectsOf(Achievement(36), Achievement(45), Achievement(66), Achievement(83)),
@@ -22,9 +24,9 @@ function snapshot() {
 
 function trace(skipKey = null, steps = null, inputs = snapshot(), producingTiers = null) {
   const { galaxyCount, noGalaxyMultiplier, galaxyMultiplier, baseInterval } = inputs;
-  const bought = skipKey === "purchased" ? DC.D0
+  const bought = skipKey === "purchased" || skipKey === "upgrades" ? DC.D0
     : (Laitela.continuumActive ? Tickspeed.continuumValue : player.totalTickBought);
-  const free = skipKey === "free" ? DC.D0 : player.totalTickGained;
+  const free = skipKey === "free" || skipKey === "upgrades" ? DC.D0 : player.totalTickGained;
   const totalUpgrades = bought.add(free);
   let interval = baseInterval;
   let rate = Decimal.divide(1000, interval);
@@ -43,10 +45,17 @@ function trace(skipKey = null, steps = null, inputs = snapshot(), producingTiers
     display: "1000 ms / (1000 ms × active achievement effects)", alwaysShow: true
   });
 
+  const rateBeforeUpgrades = rate;
   intervalStep("purchased", "formula", interval.times(noGalaxyMultiplier.pow(bought)),
     () => `${format(bought, 2, 2)} purchased or continuum upgrades; no-galaxy factor ${format(noGalaxyMultiplier, 2, 3)}`);
   intervalStep("free", "formula", interval.times(noGalaxyMultiplier.pow(free)),
     () => `${format(free, 2, 2)} free upgrades from Time Shards`);
+  if (steps) addOrderedTransform(steps, "upgrades", "formula", rateBeforeUpgrades, rate, {
+    display: `${Laitela.continuumActive ? "Continuum" : "Purchased"}: ${format(bought, 2, 2)}; ` +
+      `free: ${format(free, 2, 2)}; total: ${format(totalUpgrades, 2, 2)}; ` +
+      `per-upgrade interval without galaxies: ${format(noGalaxyMultiplier, 2, 3)}`,
+    alwaysShow: true
+  });
 
   // Keep the current purchases when removing galaxies; galaxy strength changes the
   // multiplier applied by EVERY upgrade, not the number of upgrades.
@@ -96,6 +105,7 @@ const sourceCache = createOrderedTransformCache(() => {
   const result = {};
   const inputs = snapshot();
   for (const key of ["antimatter", "generated", "replicanti", "tachyon", "galactic"]) {
+    const source = inputs.galaxyDetails.sources.find(item => item.key === key);
     const omitted = effectiveBaseGalaxies(key);
     const without = { ...inputs, galaxyCount: omitted,
       galaxyMultiplier: getTickSpeedMultiplier(omitted) };
@@ -103,7 +113,7 @@ const sourceCache = createOrderedTransformCache(() => {
       type: "formula",
       before: trace(null, null, without),
       after: total,
-      display: `Effective galaxy count without this source: ${format(omitted, 2, 2)}; with all: ${format(inputs.galaxyCount, 2, 2)}`,
+      display: `${source.name}: raw ${format(source.raw, 2, 2)}, adjusted ${format(source.effective, 2, 2)}; count without source ${format(omitted, 2, 2)} → ${format(inputs.galaxyCount, 2, 2)}.`,
     };
   }
   return result;

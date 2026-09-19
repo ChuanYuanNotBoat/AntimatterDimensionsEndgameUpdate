@@ -1,6 +1,7 @@
 import { RebuyableMechanicState, SetPurchasableMechanicState } from "./game-mechanics";
 import FullScreenAnimationHandler from "./full-screen-animation-handler";
 import { SpeedrunMilestones } from "./speedrun";
+import { boundedPositivePower, boundedPositiveProduct } from "./finite-decimal";
 
 export function animateAndDilate() {
   FullScreenAnimationHandler.display("a-dilate", 2);
@@ -59,6 +60,15 @@ const DIL_UPG_NAMES = [
   "dtGainPelle", "galaxyMultiplier", "tickspeedPower", "galaxyThresholdPelle", "flatDilationMult"
 ];
 
+// Purchase counts are saved as JavaScript Numbers, not Decimals. In particular,
+// toNumber() on late-game affordable counts can be Infinity; never store it in
+// player.dilation.rebuyables or feed it to sumGeometricSeries().
+function finiteDilationPurchaseCount(candidate, maximum) {
+  const amount = new Decimal(candidate);
+  if (Decimal.isNaN(amount)) throw new Error("Dilation purchase estimate is NaN");
+  return Math.floor(Decimal.max(0, Decimal.min(amount, maximum)).toNumber());
+}
+
 export function buyDilationUpgrade(id, bulk = 1) {
   if (GameEnd.creditsEverClosed) return false;
   // Upgrades 1-3 are rebuyable, and can be automatically bought in bulk with a perk shop upgrade
@@ -70,28 +80,54 @@ export function buyDilationUpgrade(id, bulk = 1) {
     if (id === 4) player.dilation.totalTachyonGalaxies = player.dilation.totalTachyonGalaxies.times(2);
   } else {
     const upgAmount = player.dilation.rebuyables[id];
-    if (Currency.dilatedTime.lt(upgrade.cost) || upgAmount >= upgrade.purchaseCap) return false;
+    if (!Number.isSafeInteger(upgAmount) || upgAmount < 0 ||
+        upgAmount >= upgrade.purchaseCap) return false;
+    const currentCost = upgrade.cost;
+    if (!Decimal.isFinite(currentCost) || Currency.dilatedTime.lt(currentCost)) return false;
+    // Cap the purchase count BEFORE converting any Decimal to Number. The save
+    // format cannot represent distinct integer purchases past MAX_SAFE_INTEGER.
+    const maximum = Math.floor(Math.min(bulk, upgrade.purchaseCap - upgAmount,
+      Number.MAX_SAFE_INTEGER - upgAmount));
+    if (!(maximum >= 1)) return false;
 
-    let buying = Decimal.affordGeometricSeries(Currency.dilatedTime.value,
-      upgrade.config.initialCost, upgrade.config.increment, upgAmount).toNumber();
-    buying = Math.clampMax(buying, bulk);
-    buying = Math.clampMax(buying, upgrade.purchaseCap - upgAmount);
-    if (upgrade.cost.lt(DilationUpgradeScaling.PRIMARY_SCALING)) buying = Math.clampMax(buying, upgrade.capIncreaseAt - upgAmount);
-    if (upgrade.cost.lt(Decimal.pow10(1e10)) && upgrade.superExponent !== Infinity) buying = Math.clampMax(buying, upgrade.superExponent - upgAmount);
-    const hasBoughtOverThreshold = Math.max(upgAmount - upgrade.capIncreaseAt, 0);
-    const exactCostAtThreshold = Decimal.multiply(upgrade.config.initialCost, Decimal.pow(upgrade.config.increment, upgrade.capIncreaseAt));
-    const dtOverThreshold = Decimal.log10(Currency.dilatedTime.value.div(exactCostAtThreshold)).toNumber();
-    const canBuyOverThreshold = Math.floor(Math.sqrt(((dtOverThreshold / Math.log10(upgrade.config.increment)) * 2) + 0.25) - 0.5);
-    const hasBoughtOverSuperscale = Math.max(upgAmount - upgrade.superExponent, 0);
-    const logCostAtSuperscale = 1e10;
-    const dtOverSuperscale = Currency.dilatedTime.value.max(1).log10().div(logCostAtSuperscale).toNumber();
-    const canBuyOverSuperscale = Decimal.floor(Decimal.log(dtOverSuperscale, 1.0002)).toNumber();
-    if (upgrade.cost.gte(Decimal.pow10(1e10)) && upgrade.superExponent !== Infinity) buying = canBuyOverSuperscale - hasBoughtOverSuperscale + 1;
-    else if (upgrade.cost.gte(DilationUpgradeScaling.PRIMARY_SCALING)) buying = canBuyOverThreshold - hasBoughtOverThreshold + 1;
-    if (upgrade.cost.lt(Decimal.pow10(1e10)) && upgrade.superExponent !== Infinity) buying = Math.clampMax(buying, upgrade.superExponent - upgAmount);
-    const cost = Decimal.sumGeometricSeries(buying, upgrade.config.initialCost, upgrade.config.increment, upgAmount);
-    Currency.dilatedTime.purchase(cost);
-    player.dilation.rebuyables[id] += buying;
+    let buying;
+    if (currentCost.lt(DilationUpgradeScaling.PRIMARY_SCALING)) {
+      // The geometric estimate is only valid in the unscaled range. Computing
+      // it after scaling can also create NaN on enormous late-game currencies.
+      buying = finiteDilationPurchaseCount(Decimal.affordGeometricSeries(Currency.dilatedTime.value,
+        upgrade.config.initialCost, upgrade.config.increment, upgAmount), maximum);
+      buying = Math.min(buying, upgrade.capIncreaseAt - upgAmount);
+      if (upgrade.superExponent !== Infinity) buying = Math.min(buying, upgrade.superExponent - upgAmount);
+    } else if (currentCost.gte(Decimal.pow10(1e10)) && upgrade.superExponent !== Infinity) {
+      const hasBoughtOverSuperscale = Math.max(upgAmount - upgrade.superExponent, 0);
+      const superLog = Currency.dilatedTime.value.max(1).log10().div(1e10);
+      const superPurchases = Decimal.log(superLog.max(1), 1.0002).floor();
+      buying = finiteDilationPurchaseCount(superPurchases.sub(hasBoughtOverSuperscale).add(1), maximum);
+    } else {
+      const hasBoughtOverThreshold = Math.max(upgAmount - upgrade.capIncreaseAt, 0);
+      const exactCostAtThreshold = Decimal.multiply(upgrade.config.initialCost,
+        Decimal.pow(upgrade.config.increment, upgrade.capIncreaseAt));
+      // The logarithm can be much larger than 1e308. Keep the inversion in
+      // Decimal space until it has been bounded by the remaining buy capacity.
+      const thresholdLog = Currency.dilatedTime.value.log10().sub(exactCostAtThreshold.log10()).max(0);
+      const thresholdPurchases = thresholdLog.div(Math.log10(upgrade.config.increment))
+        .times(2).add(0.25).sqrt().sub(0.5).floor();
+      buying = finiteDilationPurchaseCount(thresholdPurchases.sub(hasBoughtOverThreshold).add(1), maximum);
+      if (upgrade.superExponent !== Infinity) buying = Math.min(buying, upgrade.superExponent - upgAmount);
+    }
+    // A rounding error in a reverse cost estimate must not prevent a purchase
+    // when the real next-upgrade cost is demonstrably affordable.
+    buying = Math.max(1, Math.min(buying, maximum));
+    let cost = Decimal.sumGeometricSeries(buying, upgrade.config.initialCost,
+      upgrade.config.increment, upgAmount);
+    // A scaled bulk estimate can exceed the available currency or overflow
+    // during the geometric sum. Fall back to the actual one-upgrade price.
+    if (!Decimal.isFinite(cost) || cost.lt(currentCost) || Currency.dilatedTime.lt(cost)) {
+      buying = 1;
+      cost = currentCost;
+    }
+    if (!Decimal.isFinite(cost) || !Currency.dilatedTime.purchase(cost)) return false;
+    player.dilation.rebuyables[id] = upgAmount + buying;
     if (id === 2) {
       if (!Perk.bypassTGReset.isBought || (Pelle.isDoomed && !PellePerkUpgrade.perkTGR.canBeApplied) || player.disablePostReality) Currency.dilatedTime.reset();
       player.dilation.nextThreshold = DC.E3;
@@ -105,7 +141,8 @@ export function buyDilationUpgrade(id, bulk = 1) {
       if (PellePerkUpgrade.perkTP2.canBeApplied) PelleRetroTP = Effects.max(1, Perk.retroactiveTP2);
       if (PellePerkUpgrade.perkTP3.canBeApplied) PelleRetroTP = Effects.max(1, Perk.retroactiveTP3);
       if (PellePerkUpgrade.perkTP4.canBeApplied) PelleRetroTP = Effects.max(1, Perk.retroactiveTP4);
-      Currency.tachyonParticles.multiply(Decimal.pow(PelleRetroTP, buying));
+      Currency.tachyonParticles.value = boundedPositiveProduct(Currency.tachyonParticles.value,
+        boundedPositivePower(PelleRetroTP, buying));
     }
 
     if (id === 3 && !Pelle.isDisabled("tpMults") && !player.disablePostReality) {
@@ -119,7 +156,8 @@ export function buyDilationUpgrade(id, bulk = 1) {
       if (Enslaved.isRunning) {
         retroactiveTPFactor = Math.pow(retroactiveTPFactor, Enslaved.tachyonNerf);
       }
-      Currency.tachyonParticles.multiply(Decimal.pow(retroactiveTPFactor, buying));
+      Currency.tachyonParticles.value = boundedPositiveProduct(Currency.tachyonParticles.value,
+        boundedPositivePower(retroactiveTPFactor, buying));
     }
   }
   return true;
@@ -153,6 +191,14 @@ export function getTachyonGalaxyPowers() {
   return pelleExclusivePower * EndgameUpgrade(22).effectOrDefault(1) * extraPower;
 }
 
+// EM271 disables the softcap. Using Decimal(Infinity) as its threshold
+// is unsafe: a sufficiently large gain enters an Infinity - Infinity formula.
+function applyDilatedTimeSoftcap(rate) {
+  if (EndgameMastery(271).isBought || rate.lt(DC.E20000)) return rate;
+  const thresholdLog = DC.E20000.log10();
+  return boundedPositivePower(10, rate.log10().sub(thresholdLog).div(10).add(thresholdLog));
+}
+
 export function getDilationGainPerSecond() {
   if (Pelle.isDoomed) {
     let pelleExtraDT = new Decimal(1);
@@ -173,76 +219,74 @@ export function getDilationGainPerSecond() {
       .times(Pelle.specialGlyphEffect.dilation).times(pelleExtraDT)
       .times(Alpha.isRunning ? getGameSpeedupForDisplay().pow(0.01) : getGameSpeedupForDisplay());
     if (getAdjustedGlyphEffect("replicationdtgain").neq(0) && PelleDestructionUpgrade.destroyedGlyphEffects.canBeApplied && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
-      dtRate = dtRate.pow(ReplicantiMultipliers.dtPow);
+      dtRate = boundedPositivePower(dtRate, ReplicantiMultipliers.dtPow);
     }
     if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) {
-      dtRate = dtRate.pow(player.dilation.dilatedTime.max(1e10).log10().log10());
+      dtRate = boundedPositivePower(dtRate, player.dilation.dilatedTime.max(1e10).log10().log10());
     }
-    if (dtRate.gte(DilationSoftcapStart.PRIMARY_THRESHOLD())) {
-      dtRate = Decimal.pow(10, (((Decimal.log10(dtRate).sub(Decimal.log10(DilationSoftcapStart.PRIMARY_THRESHOLD()))).div(10)).add(
-        Decimal.log10(DilationSoftcapStart.PRIMARY_THRESHOLD()))));
-    }
-    return dtRate;
+    return applyDilatedTimeSoftcap(dtRate);
   }
-  let dtRate = new Decimal(Currency.tachyonParticles.value)
-    .timesEffectsOf(
-      DilationUpgrade.dtGain,
-      Achievement(132),
-      Achievement(137),
-      RealityUpgrade(1),
-      AlchemyResource.dilation,
-      Ra.unlocks.continuousTTBoost.effects.dilatedTime,
-      Ra.unlocks.peakGamespeedDT
-    );
-  dtRate = dtRate.times(getAdjustedGlyphEffect("dilationDT"));
-  dtRate = dtRate.times(ShopPurchase.dilatedTimePurchases.currentMult);
-  dtRate = dtRate.times(ReplicantiMultipliers.dtMult);
-  if (LHC.voidRunning) dtRate = dtRate.timesEffectOf(NullUpgrade.dilatedTimeMult);
-  if (Enslaved.isRunning && !dtRate.eq(0)) dtRate = Decimal.pow10(Decimal.pow(dtRate.plus(1).log10(), 0.85).sub(1));
+  let dtRate = new Decimal(Currency.tachyonParticles.value);
+  for (const source of [
+    DilationUpgrade.dtGain,
+    Achievement(132),
+    Achievement(137),
+    RealityUpgrade(1),
+    AlchemyResource.dilation,
+    Ra.unlocks.continuousTTBoost.effects.dilatedTime,
+    Ra.unlocks.peakGamespeedDT
+  ]) {
+    if (source) source.applyEffect(mult => { dtRate = boundedPositiveProduct(dtRate, mult); });
+  }
+  dtRate = boundedPositiveProduct(dtRate, getAdjustedGlyphEffect("dilationDT"));
+  dtRate = boundedPositiveProduct(dtRate, ShopPurchase.dilatedTimePurchases.currentMult);
+  dtRate = boundedPositiveProduct(dtRate, ReplicantiMultipliers.dtMult);
+  if (LHC.voidRunning) {
+    NullUpgrade.dilatedTimeMult.applyEffect(mult => { dtRate = boundedPositiveProduct(dtRate, mult); });
+  }
+  if (Enslaved.isRunning && !dtRate.eq(0)) {
+    dtRate = boundedPositivePower(10, Decimal.pow(dtRate.plus(1).log10(), 0.85).sub(1));
+  }
   if (V.isRunning) dtRate = dtRate.pow(0.5);
-  dtRate = dtRate.times(Alpha.isRunning ? getGameSpeedupForDisplay().pow(0.01) : getGameSpeedupForDisplay());
+  dtRate = boundedPositiveProduct(dtRate,
+    Alpha.isRunning ? getGameSpeedupForDisplay().pow(0.01) : getGameSpeedupForDisplay());
   if (getAdjustedGlyphEffect("replicationdtgain").neq(0) && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
-    dtRate = dtRate.pow(ReplicantiMultipliers.dtPow);
+    dtRate = boundedPositivePower(dtRate, ReplicantiMultipliers.dtPow);
   }
   if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) {
-    dtRate = dtRate.pow(player.dilation.dilatedTime.max(1e10).log10().log10());
+    dtRate = boundedPositivePower(dtRate, player.dilation.dilatedTime.max(1e10).log10().log10());
   }
-  if (dtRate.gte(DilationSoftcapStart.PRIMARY_THRESHOLD())) {
-    dtRate = Decimal.pow(10, (((Decimal.log10(dtRate).sub(Decimal.log10(DilationSoftcapStart.PRIMARY_THRESHOLD()))).div(10)).add(
-      Decimal.log10(DilationSoftcapStart.PRIMARY_THRESHOLD()))));
-  }
-  return dtRate;
+  return applyDilatedTimeSoftcap(dtRate);
 }
 
 export function tachyonGainMultiplier() {
+  // Apply one source at a time; overflowing the intermediate multiplication
+  // here would already poison TP before getTP() can guard its final product.
+  let mult = DC.D1;
+  const apply = source => {
+    if (source) source.applyEffect(effect => { mult = boundedPositiveProduct(mult, effect); });
+  };
   if (Pelle.isDisabled("tpMults")) {
-    let pelleTP = new Decimal(1);
-    if (PelleDestructionUpgrade.x3TPUpgrade.canBeApplied) pelleTP = pelleTP.timesEffectOf(DilationUpgrade.tachyonGain);
-    if (PelleRealityUpgrade.scourToEmpower.canBeApplied) pelleTP = pelleTP.timesEffectOf(GlyphSacrifice.dilation);
-    if (PelleAchievementUpgrade.achievement132.canBeApplied) pelleTP = pelleTP.timesEffectOf(Achievement(132));
-    if (PelleRealityUpgrade.superluminalAmplifier.canBeApplied) pelleTP = pelleTP.timesEffectOf(RealityUpgrade(4));
-    if (PelleRealityUpgrade.paradoxicallyAttain.canBeApplied) pelleTP = pelleTP.timesEffectOf(RealityUpgrade(8));
-    if (PelleRealityUpgrade.paradoxicalForever.canBeApplied) pelleTP = pelleTP.timesEffectOf(RealityUpgrade(15));
-    pelleTP = pelleTP.timesEffectOf(Ra.unlocks.gameSpeedTachyonMult);
-    return pelleTP;
+    if (PelleDestructionUpgrade.x3TPUpgrade.canBeApplied) apply(DilationUpgrade.tachyonGain);
+    if (PelleRealityUpgrade.scourToEmpower.canBeApplied) apply(GlyphSacrifice.dilation);
+    if (PelleAchievementUpgrade.achievement132.canBeApplied) apply(Achievement(132));
+    if (PelleRealityUpgrade.superluminalAmplifier.canBeApplied) apply(RealityUpgrade(4));
+    if (PelleRealityUpgrade.paradoxicallyAttain.canBeApplied) apply(RealityUpgrade(8));
+    if (PelleRealityUpgrade.paradoxicalForever.canBeApplied) apply(RealityUpgrade(15));
+    apply(Ra.unlocks.gameSpeedTachyonMult);
+    return mult;
   }
-  const pow = Enslaved.isRunning ? Enslaved.tachyonNerf : 1;
-  let mult = new Decimal(1)
-    .timesEffectsOf(
-      DilationUpgrade.tachyonGain,
-      GlyphSacrifice.dilation,
-      Achievement(132),
-      RealityUpgrade(4),
-      RealityUpgrade(8),
-      RealityUpgrade(15),
-      Ra.unlocks.gameSpeedTachyonMult
-    );
-
-  if (LHC.voidRunning) mult = mult.timesEffectOf(NullUpgrade.tachyonParticleMult);
-
-  mult = mult.pow(pow);
-  
-  return mult;
+  for (const source of [
+    DilationUpgrade.tachyonGain,
+    GlyphSacrifice.dilation,
+    Achievement(132),
+    RealityUpgrade(4),
+    RealityUpgrade(8),
+    RealityUpgrade(15),
+    Ra.unlocks.gameSpeedTachyonMult
+  ]) apply(source);
+  if (LHC.voidRunning) apply(NullUpgrade.tachyonParticleMult);
+  return boundedPositivePower(mult, Enslaved.isRunning ? Enslaved.tachyonNerf : 1);
 }
 
 export function rewardTP() {
@@ -259,19 +303,26 @@ export function getBaseTP(antimatter, requireEternity) {
   const am = (isInCelestialReality() || Pelle.isDoomed || player.disablePostReality)
     ? antimatter
     : Ra.unlocks.unlockDilationStartingTP.effectOrDefault(antimatter);
-  let baseTP = Decimal.pow(Decimal.log10(am).div(160), 1.8);
-  if (Enslaved.isRunning) baseTP = baseTP.pow(Enslaved.tachyonNerf);
-  baseTP = baseTP.powEffectsOf(
-    BreakEternityUpgrade.tachyonParticlePow
-  );
+  // log10(0) followed by a fractional power is undefined; no AM means no TP.
+  if (Decimal.lte(am, 1)) return DC.D0;
+  let baseTP = boundedPositivePower(Decimal.log10(am).div(160), 1.8);
+  if (Enslaved.isRunning) baseTP = boundedPositivePower(baseTP, Enslaved.tachyonNerf);
+  BreakEternityUpgrade.tachyonParticlePow.applyEffect(power => {
+    baseTP = boundedPositivePower(baseTP, power);
+  });
   return baseTP;
 }
 
 // Returns the TP that would be gained this run
 export function getTP(antimatter, requireEternity) {
-  let pend = getBaseTP(antimatter, requireEternity).times(tachyonGainMultiplier()).pow(player.disablePostReality ? 1 : AlphaUnlocks.dilatedEternity.effects.buff.effectOrDefault(1));
-  if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) pend = pend.pow(Achievements.powerConv(RealityUpgrade(8).effectOrDefault(1)));
-  if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) pend = pend.pow(player.dilation.tachyonParticles.max(1e10).log10().log10());
+  let pend = boundedPositiveProduct(getBaseTP(antimatter, requireEternity), tachyonGainMultiplier());
+  pend = boundedPositivePower(pend, player.disablePostReality ? 1 : AlphaUnlocks.dilatedEternity.effects.buff.effectOrDefault(1));
+  if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) {
+    pend = boundedPositivePower(pend, Achievements.powerConv(RealityUpgrade(8).effectOrDefault(1)));
+  }
+  if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) {
+    pend = boundedPositivePower(pend, player.dilation.tachyonParticles.max(1e10).log10().log10());
+  }
   return pend;
 }
 
@@ -283,19 +334,23 @@ export function getTachyonGain(requireEternity) {
 
 // Returns the minimum antimatter needed in order to gain more TP; used only for display purposes
 export function getTachyonReq() {
-  let effectiveTP = Currency.tachyonParticles.value.pow(1 / (player.disablePostReality ? 1 : AlphaUnlocks.dilatedEternity.effects.buff.effectOrDefault(1)));
-  if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) effectiveTP = effectiveTP.pow(1 / Achievements.powerConv(RealityUpgrade(8).effectOrDefault(1)));
-  if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) effectiveTP = effectiveTP.pow(DC.D1.div(player.dilation.tachyonParticles.max(1e10).log10().log10()));
+  const alphaPower = player.disablePostReality ? DC.D1 :
+    new Decimal(AlphaUnlocks.dilatedEternity.effects.buff.effectOrDefault(1));
+  let effectiveTP = boundedPositivePower(Currency.tachyonParticles.value, DC.D1.div(alphaPower));
+  if (ResurgenceUpgrade.achSurge.isBought && !player.disablePostReality) {
+    effectiveTP = boundedPositivePower(effectiveTP,
+      DC.D1.div(Achievements.powerConv(RealityUpgrade(8).effectOrDefault(1))));
+  }
+  if (ResurgenceUpgrade.curr2Surge.isBought && !player.disablePostReality && !Pelle.isDoomed) {
+    effectiveTP = boundedPositivePower(effectiveTP,
+      DC.D1.div(player.dilation.tachyonParticles.max(1e10).log10().log10()));
+  }
   effectiveTP = effectiveTP.dividedBy(tachyonGainMultiplier());
   const reciprocalpow = DC.D1.timesEffectsOf(BreakEternityUpgrade.tachyonParticlePow).reciprocal();
-  effectiveTP = effectiveTP.pow(reciprocalpow);
-  if (Enslaved.isRunning) effectiveTP = effectiveTP.pow(1 / Enslaved.tachyonNerf);
-  return Decimal.pow10(
-    effectiveTP
-      .times(Math.pow(160, 1.8))
-      .pow(5 / 9)
-      .toNumber()
-  );
+  effectiveTP = boundedPositivePower(effectiveTP, reciprocalpow);
+  if (Enslaved.isRunning) effectiveTP = boundedPositivePower(effectiveTP, DC.D1.div(Enslaved.tachyonNerf));
+  return boundedPositivePower(10,
+    boundedPositivePower(boundedPositiveProduct(effectiveTP, Math.pow(160, 1.8)), 5 / 9));
 }
 
 export function getDilationTimeEstimate(goal) {
@@ -320,13 +375,15 @@ export function dilatedValueOf(value) {
   if (Alpha.isRunning) basePenalty = Effects.min(1, AlphaUnlocks.unlockDilation.effects.nerf, AlphaUnlocks.dilatedEternity.effects.nerf);
   if (!player.disablePostReality) basePenalty = AlphaUnlocks.unlockDilation.effects.buff.effectOrDefault(0.75);
   const dilationPenalty = basePenalty * Effects.product(DilationUpgrade.dilationPenalty);
-  return Decimal.pow10(new Decimal(Decimal.sign(log10)).times(Decimal.pow(Decimal.abs(log10), dilationPenalty)));
+  const reducedLog = boundedPositivePower(Decimal.abs(log10), dilationPenalty);
+  return boundedPositivePower(10, new Decimal(Decimal.sign(log10)).times(reducedLog));
 }
 
 export function dilateMultiplier(value, mag) {
   if (value.lte(0)) return new Decimal(0);
   const log10 = value.log10();
-  return Decimal.pow10(new Decimal(Decimal.sign(log10)).times(Decimal.pow(Decimal.abs(log10), mag)));
+  const adjustedLog = boundedPositivePower(Decimal.abs(log10), mag);
+  return boundedPositivePower(10, new Decimal(Decimal.sign(log10)).times(adjustedLog));
 }
 
 export function secondOrderDilateMultiplier(value, mag) {
@@ -411,5 +468,5 @@ export const DilationUpgradeScaling = {
 };
 
 export const DilationSoftcapStart = {
-  PRIMARY_THRESHOLD: () => EndgameMastery(271).isBought ? new Decimal(Infinity) : DC.E20000
+  PRIMARY_THRESHOLD: () => EndgameMastery(271).isBought ? DC.BEMAX : DC.E20000
 };

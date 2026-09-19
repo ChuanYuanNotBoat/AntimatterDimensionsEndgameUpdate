@@ -6,6 +6,7 @@ import {
   orderedMultiplyStep,
   orderedPowerStep,
 } from "./ordered-breakdown";
+import { boundedPositivePower } from "../../finite-decimal";
 
 // Keep this ordered source list in sync with src/core/dimensions/antimatter-dimension.js.
 // The diagnostic never changes gameplay. It compares the resulting tier multiplier to the real cached multiplier.
@@ -119,7 +120,19 @@ function trace(tier, skipKey = null, steps = null) {
   let value = DC.D1;
   if (steps) addOrderedTransform(steps, "base", "formula", DC.D1, value, { alwaysShow: true });
   const mul = (key, factor) => { value = orderedMultiplyStep(steps, key, value, factor, skipKey); };
-  const pow = (key, exponent) => { value = orderedPowerStep(steps, key, value, exponent, skipKey); };
+  const pow = (key, exponent) => {
+    if (key !== "dilationGlyphPower") {
+      value = orderedPowerStep(steps, key, value, exponent, skipKey);
+      return;
+    }
+    // Match the guarded gameplay D-glyph power instead of overflowing the
+    // diagnostic trace while the game itself remains representable.
+    if (key === skipKey) return;
+    const before = value;
+    const after = boundedPositivePower(value, exponent);
+    value = steps ? addOrderedTransform(steps, key, "power", before, after,
+      { value: new Decimal(exponent) }) : after;
+  };
   const transform = (key, type, fn, display) => {
     if (skipKey === key) return;
     const before = value;

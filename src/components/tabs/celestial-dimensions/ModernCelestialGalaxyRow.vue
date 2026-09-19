@@ -58,7 +58,9 @@ export default {
             { type: "distant", function: "quadratic", amount: this.distantStart },
             { type: "remote", function: "exponential", amount: this.remoteStart }
           ];
-          return `Increased Celestial Galaxy cost scaling: ${scalings.sort((a, b) => a.amount - b.amount)
+          return `Increased Celestial Galaxy cost scaling: ${scalings.sort((a, b) =>
+  new Decimal(a.amount).cmp(new Decimal(b.amount))
+)
             .map(scaling => `${scaling.function} scaling past ${this.formatCelestialGalaxies(scaling.amount)} (${scaling.type})`)
             .join(", ").capitalize()}`;
         }

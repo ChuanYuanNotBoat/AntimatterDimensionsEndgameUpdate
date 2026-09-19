@@ -38,7 +38,7 @@ export default {
       return `grid-row: 1 / ${rows + 1}; -ms-grid-row: 1; -ms-grid-row-span: ${rows};`;
     },
     formatPerkShop() {
-      return formatPercents(this.factors.perkShop - 1, 1);
+      return formatDecimalPercents(new Decimal(this.factors.perkShop).sub(1), 1);
     },
     sliderProps() {
       return {
@@ -118,7 +118,7 @@ export default {
         return;
       }
       const glyphFactors = getGlyphLevelInputs();
-      this.perkShopVisible = glyphFactors.perkShop !== 1;
+      this.perkShopVisible = !Decimal.eq(glyphFactors.perkShop, 1);
       this.rowVisible = glyphFactors.rowFactor > 0;
       this.achievementVisible = glyphFactors.achievementFactor > 0;
       if (glyphFactors.scalePenalty.neq(1)) {

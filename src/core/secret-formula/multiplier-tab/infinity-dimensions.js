@@ -4,7 +4,7 @@ import { MultiplierTabHelper } from "./helper-functions";
 import { InfinityDimensionBreakdown } from "./infinity-dimension-breakdown";
 import { MultiplierTabIcons } from "./icons";
 
-function orderedIDEntry(name, key, icon, isOrdered = false) {
+function orderedIDEntry(name, key, icon, isOrdered = true) {
   const transform = dim => (dim
     ? InfinityDimensionBreakdown.transform(dim, key)
     : InfinityDimensionBreakdown.aggregateTransform(key));
@@ -252,7 +252,7 @@ export const ID = {
   glyph: {
     name: "Glyph Effects",
     multValue: () => 1,
-    powValue: () => getAdjustedGlyphEffect("infinitypow") * getAdjustedGlyphEffect("effarigdimensions"),
+    powValue: () => new Decimal(getAdjustedGlyphEffect("infinitypow")).times(getAdjustedGlyphEffect("effarigdimensions")),
     isActive: () => PlayerProgress.realityUnlocked(),
     icon: MultiplierTabIcons.GENERIC_GLYPH,
   },

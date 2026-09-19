@@ -37,7 +37,7 @@ function trace(skipKey = null, steps = null) {
       mult("amplifierRep", RealityUpgrade(2).effectOrDefault(1));
     }
     if (PelleRealityUpgrade.cosmicallyDuplicate.canBeApplied) {
-      mult("realityUpgrade1", Effects.product(RealityUpgrade(6)));
+      mult("realityUpgrade1", RealityUpgrade(6).effectOrDefault(DC.D1));
     }
     if (PelleRealityUpgrade.replicativeRapidity.canBeApplied) {
       mult("realityUpgrade2", Effects.product(RealityUpgrade(23)));

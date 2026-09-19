@@ -200,7 +200,7 @@ export default {
       this.isContingent = Replicanti.galaxies.bought.gte(this.contingentRG);
       this.effarigInfinityBonusRG = Effarig.bonusRG;
       this.nextEffarigRGThreshold = DC.NUMMAX.pow(
-        Effarig.bonusRG + 2
+        new Decimal(Effarig.bonusRG).add(2)
       );
       this.canSeeGalaxyButton =
         Replicanti.galaxies.max.gte(1) || PlayerProgress.eternityUnlocked();

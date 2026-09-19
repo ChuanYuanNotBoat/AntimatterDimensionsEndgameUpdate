@@ -1,4 +1,5 @@
-import { DimensionState } from "./dimension";
+import { boundedPositiveProduct, boundedPositiveSum } from "../finite-decimal";
+import { DimensionState, assertDimensionFinite } from "./dimension";
 
 export function infinityDimensionCommonMultiplier() {
   let mult = new Decimal(ShopPurchase.allDimPurchases.currentMult)
@@ -130,19 +131,45 @@ class InfinityDimensionState extends DimensionState {
     return this.productionPerSecondWithMultiplier();
   }
 
+  // Preserve the original per-second calculation while avoiding intermediate
+  // overflow before division by 1000 near break_eternity's representation limit.
+  productionForDiff(diff) {
+    assertDimensionFinite(diff, this, "diff", diff);
+    const rate = assertDimensionFinite(this.productionPerSecond, this, "productionPerSecond", diff);
+    const duration = assertDimensionFinite(new Decimal(diff).div(1000), this, "diff / 1000", diff);
+    return boundedPositiveProduct(rate, duration);
+  }
+
+  produceDimensions(dimension, diff) {
+    const gain = this.productionForDiff(diff);
+    const before = assertDimensionFinite(dimension.amount, this, "destination amount", diff, dimension);
+    dimension.amount = boundedPositiveSum(before, gain);
+  }
+
+  // ID1 produces Infinity Power via the ordinary DecimalCurrency value setter.
+  produceCurrency(currency, diff) {
+    const gain = this.productionForDiff(diff);
+    const before = assertDimensionFinite(currency.value, this, "destination currency", diff);
+    currency.value = boundedPositiveSum(before, gain);
+  }
+
+  get productionPerRealSecond() {
+    return boundedPositiveProduct(this.productionPerSecond, getGameSpeedupForDisplay());
+  }
+
   productionPerSecondWithMultiplier(multiplier = undefined) {
     if (EternityChallenge(2).isRunning || EternityChallenge(10).isRunning ||
       (Laitela.isRunning && this.tier > Laitela.maxAllowedDimension)) {
       return DC.D0;
     }
-    let production = this.totalAmount;
-    if (EternityChallenge(11).isRunning) {
-      return production;
-    }
+    let production = assertDimensionFinite(this.totalAmount, this, "totalAmount", DC.D0);
+    if (EternityChallenge(11).isRunning) return production;
     if (EternityChallenge(7).isRunning) {
-      production = production.times(Tickspeed.perSecond);
+      const tickspeed = assertDimensionFinite(Tickspeed.perSecond, this, "EC7 tickspeed", DC.D0);
+      production = boundedPositiveProduct(production, tickspeed);
     }
-    return production.times(multiplier ?? this.multiplier);
+    const effect = assertDimensionFinite(multiplier ?? this.multiplier, this, "multiplier", DC.D0);
+    return boundedPositiveProduct(production, effect);
   }
 
   get multiplier() {
@@ -283,9 +310,10 @@ class InfinityDimensionState extends DimensionState {
     if (Enslaved.isRunning) {
       return DC.D1;
     }
-    return InfinityDimensions.capIncrease.add(this.tier === 8
-      ? DC.BEMAX
-      : InfinityDimensions.HARDCAP_PURCHASES);
+    // Tier 8 starts at BEMAX; adding a positive Tesseract cap must not
+    // overflow that already-final representable boundary.
+    return boundedPositiveSum(this.tier === 8 ? DC.BEMAX : InfinityDimensions.HARDCAP_PURCHASES,
+      InfinityDimensions.capIncrease);
   }
 
   get isCapped() {
@@ -304,7 +332,9 @@ class InfinityDimensionState extends DimensionState {
     // It's safe to use dimension.currencyAmount because this is
     // a dimension-only method (so don't just copy it over to tickspeed).
     // We need to use dimension.currencyAmount here because of different costs in NC6.
-    return this.getContinuumValue.times(Laitela.matterExtraPurchaseFactor);
+    const purchases = assertDimensionFinite(this.getContinuumValue, this, "continuum purchases", DC.D0);
+    const factor = assertDimensionFinite(Laitela.matterExtraPurchaseFactor, this, "continuum multiplier", DC.D0);
+    return boundedPositiveProduct(purchases, factor);
   }
 
   get getContinuumValue() {
@@ -316,11 +346,15 @@ class InfinityDimensionState extends DimensionState {
    */
   get continuumAmount() {
     if (!Laitela.continuumActive || EternityChallenge(8).isRunning || Alpha.currentStage < 9 || player.disablePostReality) return DC.D0;
-    return Decimal.floor(this.continuumValue.times(10));
+    return Decimal.floor(boundedPositiveProduct(this.continuumValue, 10));
   }
 
   get totalAmount() {
-    return this.amount.max(this.continuumAmount);
+    // The saved produced amount and effective Continuum amount have distinct
+    // origins; report a broken source rather than silently accepting Infinity.
+    const produced = assertDimensionFinite(this.amount, this, "stored amount", DC.D0);
+    const continuum = assertDimensionFinite(this.continuumAmount, this, "continuum amount", DC.D0);
+    return produced.max(continuum);
   }
 
   resetAmount() {
@@ -554,6 +588,7 @@ export const InfinityDimensions = {
     );
     const exponent = Effects.product(EndgameMastery(102), Ra.unlocks.spaceTheoremIPowConversion);
     const divisor = Alpha.isRunning ? AlphaUnlocks.breakInfinity.effects.nerfC.effectOrDefault(1) : 1;
-    return Math.pow((7 + getAdjustedGlyphEffect("infinityrate") + PelleUpgrade.infConversion.effectOrDefault(0)) * multiplier * multiplier2, exponent) / divisor;
+    return Decimal.pow(new Decimal(7).add(getAdjustedGlyphEffect("infinityrate"))
+      .add(PelleUpgrade.infConversion.effectOrDefault(0)).times(multiplier).times(multiplier2), exponent).div(divisor);
   }
 };

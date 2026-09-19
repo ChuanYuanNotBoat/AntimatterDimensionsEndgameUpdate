@@ -4,7 +4,7 @@ import { MultiplierTabHelper } from "./helper-functions";
 import { MultiplierTabIcons } from "./icons";
 import { TimeDimensionBreakdown } from "./time-dimension-breakdown";
 
-function orderedTDEntry(name, key, icon, isOrdered = false) {
+function orderedTDEntry(name, key, icon, isOrdered = true) {
   const transform = dim => (dim
     ? TimeDimensionBreakdown.transform(dim, key)
     : TimeDimensionBreakdown.aggregateTransform(key));
@@ -200,7 +200,7 @@ export const TD = {
       ).times(EternityChallenge(7).isRunning ? Tickspeed.perSecond : DC.D1);
       if (EternityChallenge(9).isRunning) {
         allMult = allMult.times(
-          Decimal.pow(Decimal.clampMin(Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate / 7)
+          Decimal.pow(Decimal.clampMin(Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate.div(7))
             .log2(), 1), 4).clampMin(1));
       }
       return Decimal.pow(allMult, dim ? 1 : MultiplierTabHelper.activeDimCount("TD"));
@@ -241,7 +241,7 @@ export const TD = {
   },
   glyph: {
     name: "Glyph Effects",
-    powValue: () => getAdjustedGlyphEffect("timepow") * getAdjustedGlyphEffect("effarigdimensions"),
+    powValue: () => new Decimal(getAdjustedGlyphEffect("timepow")).times(getAdjustedGlyphEffect("effarigdimensions")),
     isActive: () => PlayerProgress.realityUnlocked(),
     icon: MultiplierTabIcons.GENERIC_GLYPH
   },

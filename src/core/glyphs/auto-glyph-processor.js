@@ -239,10 +239,10 @@ function getGlyphLevelSources() {
   eternityPoints = Decimal.max(player.records.thisReality.maxEP, eternityPoints);
   const epCoeff = new Decimal(0.016);
   const epBase = Decimal.pow(Decimal.max(1, eternityPoints.add(1).pLog10()), 0.5).times(epCoeff);
-  const replPow = new Decimal(0.4 + getAdjustedGlyphEffect("replicationglyphlevel"));
+  const replPow = new Decimal(0.4).add(getAdjustedGlyphEffect("replicationglyphlevel"));
   const replCoeff = new Decimal(0.025);
   const replBase = Decimal.pow(Decimal.max(1, player.records.thisReality.maxReplicanti.add(1).log10()), replPow).times(replCoeff);
-  const dtPow = new Decimal(1.3 + getAdjustedGlyphEffect("realityDTglyph"));
+  const dtPow = new Decimal(1.3).add(getAdjustedGlyphEffect("realityDTglyph"));
   const dtCoeff = new Decimal(0.025);
   const dtBase = Decimal.pow(Decimal.max(1, player.records.thisReality.maxDT.add(1).pLog10()), dtPow).times(dtCoeff);
   const eterBase = new Decimal(RealityUpgrade(18).effectOrDefault(1));
@@ -334,7 +334,9 @@ export function getGlyphLevelInputs() {
   const instabilitySoftcap = (level, begin, rate) => {
     if (level.lt(begin)) return level;
     const excess = level.sub(begin).div(rate);
-    return Decimal.sqrt(excess.times(4).add(1)).sub(1).times(rate).times(0.5).add(begin);
+    // Algebraically identical to (sqrt(4 * excess + 1) - 1) * rate / 2,
+    // but avoids a needless x4 intermediate near Decimal's magnitude limit.
+    return Decimal.sqrt(excess.add(0.25)).sub(0.5).times(rate).add(begin);
   };
   scaledLevel = instabilitySoftcap(scaledLevel, staticFactors.instability, 500 * EndgameMastery(274).effectOrDefault(1));
   scaledLevel = instabilitySoftcap(scaledLevel, staticFactors.hyperInstability, 400 * EndgameMastery(274).effectOrDefault(1));
@@ -370,7 +372,7 @@ export function getGlyphLevelInputs() {
 // Calculates glyph weights which don't change over the course of a reality unless particular events occur; this is
 // stored in the GameCache and only invalidated as needed
 export function staticGlyphWeights() {
-  const perkShop = Effects.max(1, PerkShopUpgrade.glyphLevel);
+  const perkShop = Decimal.max(1, PerkShopUpgrade.glyphLevel.effectOrDefault(1));
   const instability = Glyphs.instabilityThreshold;
   const hyperInstability = Glyphs.hyperInstabilityThreshold;
   const extremeInstability = Glyphs.extremeInstabilityThreshold;

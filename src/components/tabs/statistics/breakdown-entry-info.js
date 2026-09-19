@@ -170,7 +170,19 @@ export class BreakdownEntryInfo {
   }
 
   get isOrdered() {
-    return this._isOrdered() ?? false;
+    const explicit = this._isOrdered();
+    if (explicit !== undefined) return explicit;
+    // Fallback for transform-backed entries without an explicit flag (IP/EP/DT/Infinities/
+    // Eternities/Replicanti/Tickspeed sub-entries): nested panels use the same ordered formula
+    // style as the resource roots (e.g. IP/EP). Panels whose child rows are raw multiplier/power
+    // entries (e.g. IP_base → antimatter display row, IP_achievement → general_* rows) keep the
+    // legacy percent-share view, which is the only meaningful presentation for those rows.
+    if (!this._hasTransform) return false;
+    const groups = GameDatabase.multiplierTabTree[this.key];
+    if (groups === undefined) return true;
+    // multiplierTabTree contains arrays of key strings, not BreakdownEntryInfoGroup objects.
+    // Use the cached entries to inspect static transform metadata without evaluating formulas.
+    return groups.every(keys => keys.every(key => createEntryInfo(key)._hasTransform));
   }
 
   get ignoresNerfPowers() {

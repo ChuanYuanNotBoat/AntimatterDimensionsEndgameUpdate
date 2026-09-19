@@ -54,7 +54,7 @@ function getProps(resource, tier) {
 // specification, all children props are dynamically added based on the arrays in the helper functions above
 export const multiplierTabTree = {
   AM_total: [
-    ["AD_total_1", "AM_tickRate"]
+    ["AM_ad1Amount", "AD_total_1", "AM_tickRate", "AM_gameSpeed", "AM_unattributed"]
   ],
   AM_tickRate: [["AM_tickBase", "AM_tickPurchased", "AM_tickFree", "AM_tickGalaxies",
     "AM_tickRaPower", "AM_tickDilationPower", "AM_tickEffarig", "AM_tickDilation",
@@ -90,7 +90,7 @@ export const multiplierTabTree = {
     getProps("DT")
   ],
   tickspeed_total: [
-    ["tickspeed_base", "tickspeed_purchased", "tickspeed_free", "tickspeed_galaxies",
+    ["tickspeed_base", "tickspeed_upgrades", "tickspeed_galaxies",
       "tickspeed_raPower", "tickspeed_dilationPower", "tickspeed_effarig", "tickspeed_dilation",
       "tickspeed_overcharge", "tickspeed_dimensionExponent", "tickspeed_traceMismatch"]
   ],

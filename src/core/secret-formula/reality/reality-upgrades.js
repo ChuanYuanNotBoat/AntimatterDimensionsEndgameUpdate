@@ -77,7 +77,9 @@ export const realityUpgrades = [
     canLock: true,
     lockEvent: "gain a Replicanti Galaxy",
     description: "Replicanti speed is multiplied based on Replicanti Galaxies",
-    effect: () => player.disablePostReality ? 1 : Replicanti.galaxies.total.div(25).add(1).toNumber(),
+    // Replicanti Galaxies can exceed the native Number range. This is a Decimal multiplier
+    // everywhere it is consumed, so retaining it as a Decimal preserves the formula at high values.
+    effect: () => (player.disablePostReality ? DC.D1 : Replicanti.galaxies.total.div(25).add(1)),
     formatEffect: value => formatX(value, 2, 2)
   },
   {

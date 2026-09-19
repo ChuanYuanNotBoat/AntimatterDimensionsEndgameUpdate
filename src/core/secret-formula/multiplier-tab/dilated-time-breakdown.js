@@ -82,8 +82,8 @@ function trace(skipKey = null, steps = null) {
       power("currencySurge", player.dilation.dilatedTime.max(1e10).log10().log10());
     }
   }
-  if (value.gte(DilationSoftcapStart.PRIMARY_THRESHOLD())) {
-    const thresholdLog = Decimal.log10(DilationSoftcapStart.PRIMARY_THRESHOLD());
+  if (!EndgameMastery(271).isBought && value.gte(DC.E20000)) {
+    const thresholdLog = DC.E20000.log10();
     change("primarySoftcap", "softcap", Decimal.pow(10,
       Decimal.log10(value).sub(thresholdLog).div(10).add(thresholdLog)));
   }

@@ -77,8 +77,43 @@ export const GlyphSacrificeHandler = {
   },
   // Scaling function to make refinement value ramp up with higher glyph levels
   levelRefinementValue(level) {
+    // The expansion-pack level/3 term is not capped at 25000. Keep the
+    // theoretical refinement value in Decimal until applying the real Number cap.
     return Decimal.max(Decimal.min(Decimal.pow(level, 3).div(1e8), 25000), (ExpansionPack.effarigPack.isBought &&
-      !player.disablePostReality) ? new Decimal(level).div(3) : DC.D1).toNumber();
+      !player.disablePostReality) ? new Decimal(level).div(3) : DC.D1);
+  },
+  // Alchemy is Number-backed. A Decimal exactly at Number.MAX_VALUE may
+  // round UP to Infinity in toNumber(); compare with the cap before converting.
+  finiteRefinementNumber(value, cap, source) {
+    if (typeof cap !== "number" || !Number.isFinite(cap) || cap < 0) {
+      throw new Error(`Invalid alchemy cap for ${source}`);
+    }
+    const decimal = new Decimal(value);
+    if ([decimal.sign, decimal.layer, decimal.mag].some(x => !Number.isFinite(x)) || decimal.lt(0)) {
+      throw new Error(`Invalid alchemy Decimal for ${source}`);
+    }
+    if (decimal.gte(cap)) return cap;
+    const converted = decimal.toNumber();
+    if (Number.isFinite(converted) && converted >= 0) return Math.min(converted, cap);
+    // Extremely close to MAX_VALUE, the library's toNumber() can overflow
+    // while a dimensionless fraction remains safely representable.
+    if (cap === 0) return 0;
+    const fraction = decimal.div(cap).toNumber();
+    if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
+      throw new Error(`Invalid alchemy Number conversion for ${source}`);
+    }
+    return Math.min(fraction * cap, cap);
+  },
+  // Native Number arithmetic is safe when we first compare gain against the
+  // available room; a saturated sum must not be converted back from Decimal.
+  addRefinementToCap(amount, gain, cap) {
+    if (![amount, gain, cap].every(x => typeof x === "number" && Number.isFinite(x) && x >= 0)) {
+      throw new Error("Invalid alchemy refinement amount, gain, or cap");
+    }
+    // The previous behavior preserves an existing balance above its cap.
+    if (amount >= cap) return amount;
+    if (gain >= cap - amount) return cap;
+    return amount + gain;
   },
   // Refined glyphs give this proportion of their maximum attainable value from their level
   glyphRefinementEfficiency: 0.05,
@@ -87,7 +122,10 @@ export const GlyphSacrificeHandler = {
     const glyphMaxValue = this.levelRefinementValue(glyph.level);
     const rarityModifier = strengthToRarity(glyph.strength) / 100;
     const extraEffects = Ra.unlocks.alchemyCapIncrease.effectOrDefault(1);
-    return this.glyphRefinementEfficiency * glyphMaxValue * rarityModifier * extraEffects;
+    // Alchemy resources are stored as native Numbers, with a finite game cap.
+    // Cap the Decimal result BEFORE converting to Number (not after Infinity).
+    return this.finiteRefinementNumber(new Decimal(glyphMaxValue).times(this.glyphRefinementEfficiency)
+      .times(rarityModifier).times(extraEffects), Ra.alchemyResourceCap, "raw glyph refinement");
   },
   glyphRefinementGain(glyph) {
     if (!Ra.unlocks.unlockGlyphAlchemy.canBeApplied || !generatedTypes.includes(glyph.type)) return 0;
@@ -108,7 +146,8 @@ export const GlyphSacrificeHandler = {
     return Math.clampMax(higherCap, Ra.alchemyResourceCap);
   },
   highestRefinementValue(glyph) {
-    return this.glyphRawRefinementGain(glyph) / this.glyphRefinementEfficiency;
+    return this.finiteRefinementNumber(new Decimal(this.glyphRawRefinementGain(glyph))
+      .div(this.glyphRefinementEfficiency), Ra.alchemyResourceCap, "highest glyph refinement");
   },
   attemptRefineGlyph(glyph, force) {
     if (glyph.type === "reality") return;
@@ -151,14 +190,18 @@ export const GlyphSacrificeHandler = {
     }
     const rawRefinementGain = this.glyphRawRefinementGain(glyph);
     const refinementGain = this.glyphRefinementGain(glyph);
-    resource.amount += refinementGain;
-    const decoherenceGain = rawRefinementGain * AlchemyResource.decoherence.effectValue;
+    // Keep a pre-existing balance above the current cap unchanged.
+    const maxResource = Math.max(this.glyphEffectiveCap(glyph), resource.amount);
+    resource.amount = this.addRefinementToCap(resource.amount, refinementGain, maxResource);
+    const decoherenceGain = this.finiteRefinementNumber(new Decimal(rawRefinementGain)
+      .times(AlchemyResource.decoherence.effectValue), Ra.alchemyResourceCap, "decoherence");
     for (const glyphTypeName of ALCHEMY_BASIC_GLYPH_TYPES) {
       if (glyphTypeName !== glyph.type) {
         const glyphType = GlyphTypes[glyphTypeName];
         const otherResource = AlchemyResources.all[glyphType.alchemyResource];
         const maxResource = Math.max(otherResource.cap, otherResource.amount);
-        otherResource.amount = Math.clampMax(otherResource.amount + decoherenceGain, maxResource);
+        // Compare against remaining room before adding; never write Infinity.
+        otherResource.amount = this.addRefinementToCap(otherResource.amount, decoherenceGain, maxResource);
       }
     }
     if (resource.isBaseResource) {

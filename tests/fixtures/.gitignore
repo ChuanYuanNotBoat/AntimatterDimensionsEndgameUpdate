@@ -1,0 +1,3 @@
+# Exported save files may contain private data; never commit test fixtures.
+*
+!.gitignore

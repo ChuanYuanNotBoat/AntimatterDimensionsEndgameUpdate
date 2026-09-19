@@ -20,6 +20,40 @@ export const AM = {
     isActive: () => AntimatterDimension(1).isProducing,
     icon: MultiplierTabIcons.TICKSPEED,
   },
+  // Explicit accounting baseline for the production audit: displayed AM/sec is reconciled as
+  // AD1 amount × AD1 multiplier × one tickspeed rate × game speed, and everything the gameplay
+  // getter produces beyond that baseline is an explicitly labeled accounting remainder.
+  ad1Amount: {
+    name: "AD1 amount",
+    displayOverride: () => `${format(AntimatterDimension(1).totalAmount, 2, 2)} AD1`,
+    multValue: () => AntimatterDimension(1).totalAmount,
+    isActive: () => AntimatterDimension(1).isProducing,
+    icon: MultiplierTabIcons.DIMENSION("AD", 1),
+  },
+  gameSpeed: {
+    name: "Game speed",
+    displayOverride: () => formatX(getGameSpeedupForDisplay(), 2, 2),
+    multValue: () => getGameSpeedupForDisplay(),
+    isActive: () => getGameSpeedupForDisplay().gt(1),
+    icon: MultiplierTabIcons.GAMESPEED,
+  },
+  unattributed: {
+    name: "Unattributed production (accounting remainder)",
+    displayOverride: () => {
+      const remainder = AM.unattributed.multValue();
+      return remainder.eq(1) ? "None (baseline reconciles exactly)" : `≈ ${formatX(remainder, 2, 2)}`;
+    },
+    multValue: () => {
+      const amount = AntimatterDimension(1).totalAmount;
+      const baseline = amount.eq(0)
+        ? DC.D0
+        : amount.times(AntimatterDimension(1).multiplier).times(Tickspeed.perSecond)
+            .times(getGameSpeedupForDisplay());
+      return baseline.gt(0) ? Currency.antimatter.productionPerSecond.div(baseline) : DC.D1;
+    },
+    isActive: true,
+    icon: MultiplierTabIcons.ANTIMATTER,
+  },
 };
 
 const tickLabels = {

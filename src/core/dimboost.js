@@ -224,7 +224,7 @@ export class DimBoost {
   static get imaginaryBoosts() {
     return Ra.isRunning
       ? DC.D0
-      : Decimal.pow(ImaginaryUpgrade(12).effectOrDefault(0) * ImaginaryUpgrade(23).effectOrDefault(1), DualityUpgrade(12).effectOrDefault(1));
+      : Decimal.pow(new Decimal(ImaginaryUpgrade(12).effectOrDefault(0)).times(ImaginaryUpgrade(23).effectOrDefault(1)), DualityUpgrade(12).effectOrDefault(1));
   }
 
   static get totalBoosts() {

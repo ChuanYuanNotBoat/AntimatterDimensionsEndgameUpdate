@@ -1,3 +1,4 @@
+import { purchaseHybridRebuyableBulk } from "./hybrid-rebuyable-bulk";
 import { BitPurchasableMechanicState, RebuyableMechanicState } from "./game-mechanics";
 
 class EndgameUpgradeState extends BitPurchasableMechanicState {
@@ -99,29 +100,17 @@ class RebuyableEndgameUpgradeState extends RebuyableMechanicState {
     player.endgame.rebuyables[this.id] = value;
   }
 
+  // This save field is a native Number, not a Decimal. Block single-click
+  // purchases as well as autobuyer bulk at the precise-integer limit.
+  get isCapped() {
+    return !Number.isSafeInteger(this.boughtAmount) || this.boughtAmount >= Number.MAX_SAFE_INTEGER;
+  }
+
   bulkPurchase() {
-    if (!this.isAffordable) return false;
-    this.boughtAmount += getInverseHybridCostScaling(
-      Currency.celestialPoints.value,
-      1e100,
-      this.config.initialCost,
-      this.config.costMult,
-      this.config.costMult / 10,
-      DC.E309,
-      1e3,
-      this.config.initialCost * this.config.costMult
-    ).sub(player.endgame.rebuyables[this.id]).toNumber();
-    Currency.celestialPoints.subtract(getHybridCostScaling(
-      player.endgame.rebuyables[this.id] - 1,
-      1e100,
-      this.config.initialCost,
-      this.config.costMult,
-      this.config.costMult / 10,
-      DC.E309,
-      1e3,
-      this.config.initialCost * this.config.costMult
-    ));
-    return true;
+    return purchaseHybridRebuyableBulk(this, [
+      1e100, this.config.initialCost, this.config.costMult, this.config.costMult / 10,
+      DC.E309, 1e3, this.config.initialCost * this.config.costMult
+    ]);
   }
 }
 

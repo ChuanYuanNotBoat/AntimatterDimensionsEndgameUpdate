@@ -1,4 +1,5 @@
 import { GameMechanicState, SetPurchasableMechanicState } from "./game-mechanics";
+import { boundedPositiveProduct } from "./finite-decimal";
 
 class ChargedInfinityUpgradeState extends GameMechanicState {
   constructor(config, upgrade) {
@@ -87,24 +88,38 @@ export function totalIPMult() {
   if (Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.INFINITY) {
     return DC.D1;
   }
-  let ipMult = DC.D1
-    .times(ShopPurchase.IPPurchases.currentMult)
-    .timesEffectsOf(
-      TimeStudy(41),
-      TimeStudy(51),
-      TimeStudy(141),
-      TimeStudy(142),
-      TimeStudy(143),
-      Achievement(85),
-      Achievement(93),
-      Achievement(116),
-      Achievement(125),
-      Achievement(141).effects.ipGain,
-      DilationUpgrade.ipMultDT
-    ).times(getAdjustedGlyphEffect("infinityIP"));
-  if (!Ascensions.ipA.isUnlocked) ipMult = ipMult.timesEffectOf(InfinityUpgrade.ipMult);
-  if (Replicanti.areUnlocked) ipMult = ipMult.times(ReplicantiMultipliers.ipMult);
-  if (LHC.voidRunning) ipMult = ipMult.timesEffectOf(NullUpgrade.infinityPointMult);
+  let ipMult = DC.D1;
+  const multiply = (name, factor) => {
+    const value = new Decimal(factor);
+    if (![value.sign, value.layer, value.mag].every(Number.isFinite)) {
+      throw new Error(`Invalid IP multiplier source: ${name}`);
+    }
+    ipMult = boundedPositiveProduct(ipMult, value);
+  };
+  multiply("IP shop purchases", ShopPurchase.IPPurchases.currentMult);
+  for (const [name, source] of [
+    ["TS41", TimeStudy(41)],
+    ["TS51", TimeStudy(51)],
+    ["TS141", TimeStudy(141)],
+    ["TS142", TimeStudy(142)],
+    ["TS143", TimeStudy(143)],
+    ["Achievement 85", Achievement(85)],
+    ["Achievement 93", Achievement(93)],
+    ["Achievement 116", Achievement(116)],
+    ["Achievement 125", Achievement(125)],
+    ["Achievement 141", Achievement(141).effects.ipGain],
+    ["DT-based IP multiplier", DilationUpgrade.ipMultDT]
+  ]) {
+    source.applyEffect(value => multiply(name, value));
+  }
+  multiply("Infinity IP glyph", getAdjustedGlyphEffect("infinityIP"));
+  if (!Ascensions.ipA.isUnlocked) {
+    InfinityUpgrade.ipMult.applyEffect(value => multiply("Infinity IP upgrade", value));
+  }
+  if (Replicanti.areUnlocked) multiply("Replicanti IP multiplier", ReplicantiMultipliers.ipMult);
+  if (LHC.voidRunning) {
+    NullUpgrade.infinityPointMult.applyEffect(value => multiply("Void IP multiplier", value));
+  }
   return ipMult;
 }
 

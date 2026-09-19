@@ -20,6 +20,9 @@ export default {
       availableGroupsSignature: "",
       currentID: player.options.multiplierTab.currTab,
       amSnapshot: null,
+      // Inline Overall/tier analysis view for dimension resources; UI state only and never a
+      // new saved tab ID (player.options.multiplierTab.currTab keeps the dimension's own ID).
+      dimensionTier: 0,
       // Navigation memory is local UI state, not a new save field. Existing numeric IDs are preserved.
       lastSelectedTabs: {},
     };
@@ -42,10 +45,32 @@ export default {
     },
     resource() {
       if (!this.currentKey) return null;
-      return createEntryInfo(`${this.currentKey}_total`);
+      const tierSuffix = this.isDimensionBreakdown && this.dimensionTier > 0 ? `_${this.dimensionTier}` : "";
+      return createEntryInfo(`${this.currentKey}_total${tierSuffix}`);
     },
     isDimensionBreakdown() {
       return (this.currentOption?.dimensionTiers ?? 0) > 0;
+    },
+    // Inline analysis-header switch: Overall plus every currently unlocked tier, in order.
+    // Locked tiers are excluded; an out-of-range tier falls back to Overall in update().
+    dimensionOptions() {
+      if (!this.isDimensionBreakdown) return [];
+      const options = [{ tier: 0, text: "Overall" }];
+      const maxTier = this.currentOption.dimensionTiers;
+      for (let tier = 1; tier <= maxTier; tier++) {
+        if (this.checkActiveKey(this.currentKey, tier)) {
+          options.push({ tier, text: `${this.currentKey} ${tier}` });
+        }
+      }
+      return options;
+    },
+    dimensionPrevDisabled() {
+      return !this.isDimensionBreakdown ||
+        !this.dimensionOptions.some(option => option.tier > 0 && option.tier < this.dimensionTier);
+    },
+    dimensionNextDisabled() {
+      return !this.isDimensionBreakdown ||
+        !this.dimensionOptions.some(option => option.tier > this.dimensionTier);
     },
     resourceSymbols() {
       return GameDatabase.multiplierTabValues[this.currentKey]?.total?.overlay ?? [];
@@ -53,7 +78,8 @@ export default {
     analysisModeLabel() {
       if (this.currentKey === "AM") return "Production sources and gameplay limits";
       if (!this.resource?.isOrdered) return "Multiplier breakdown";
-      return this.isDimensionBreakdown ? "Group by source / dimension" : "Ordered formula";
+      if (this.isDimensionBreakdown && this.dimensionTier === 0) return "Combined source impacts";
+      return "Ordered formula";
     }
   },
   created() {
@@ -81,6 +107,12 @@ export default {
           this.$set(this.lastSelectedTabs, this.currentGroupKey, selected.id);
         }
       }
+      // A tier that became locked (or a resource that lost its tiers) falls back to Overall.
+      if (!this.isDimensionBreakdown ||
+        (this.dimensionTier !== 0 &&
+          !this.dimensionOptions.some(option => option.tier === this.dimensionTier))) {
+        this.dimensionTier = 0;
+      }
       if (this.currentKey === "AM") this.updateAntimatterSnapshot();
     },
     checkActiveKey(key, tier) {
@@ -93,11 +125,26 @@ export default {
       if (!option) return;
       this.currentID = option.id;
       player.options.multiplierTab.currTab = option.id;
+      this.dimensionTier = 0;
       const group = this.availableGroups.find(g => g.options.some(o => o.id === option.id));
       if (group && this.lastSelectedTabs[group.key] !== option.id) {
         this.$set(this.lastSelectedTabs, group.key, option.id);
       }
       if (option.key === "AM") this.updateAntimatterSnapshot(true);
+    },
+    selectDimension(tier) {
+      if (!this.isDimensionBreakdown) return;
+      if (tier !== 0 && !this.dimensionOptions.some(option => option.tier === tier)) return;
+      this.dimensionTier = tier;
+    },
+    stepDimension(delta) {
+      if (!this.isDimensionBreakdown) return;
+      const tiers = this.dimensionOptions.map(option => option.tier).filter(tier => tier > 0);
+      const target = delta < 0
+        ? tiers.filter(tier => tier < this.dimensionTier).pop()
+        : tiers.find(tier => tier > this.dimensionTier);
+      if (target === undefined) return;
+      this.dimensionTier = target;
     },
     clickCategory(group) {
       const remembered = this.lastSelectedTabs[group.key];
@@ -169,17 +216,57 @@ export default {
           {{ currentOption.text }}
         </h3>
         <span class="c-multiplier-analysis-kind">{{ analysisModeLabel }}</span>
+        <div
+          v-if="isDimensionBreakdown"
+          class="l-dimension-inline-switch"
+        >
+          <button
+            type="button"
+            class="c-dimension-step-btn"
+            :disabled="dimensionPrevDisabled"
+            aria-label="Previous dimension analysis view"
+            @click="stepDimension(-1)"
+          >
+            <i class="fas fa-chevron-left" />
+          </button>
+          <select
+            class="c-dimension-inline-select"
+            aria-label="Choose overall or dimension analysis view"
+            :value="dimensionTier"
+            @change="selectDimension(Number($event.target.value))"
+          >
+            <option
+              v-for="opt in dimensionOptions"
+              :key="opt.tier"
+              :value="opt.tier"
+            >
+              {{ opt.text }}
+            </option>
+          </select>
+          <button
+            type="button"
+            class="c-dimension-step-btn"
+            :disabled="dimensionNextDisabled"
+            aria-label="Next dimension analysis view"
+            @click="stepDimension(1)"
+          >
+            <i class="fas fa-chevron-right" />
+          </button>
+        </div>
       </div>
       <p
         v-if="currentKey === 'AD'"
         class="c-multiplier-coverage-warning"
       >
-        Use the grouping button in the top-right of the analysis panel to switch between sources and
-        AD1–AD8, like the original breakdown. Expand a dimension inline to inspect its ordered formula.
+        AD analyzes individual dimension multipliers, not production. The inline switch in the analysis header
+        moves between the combined view and AD1–AD8 without opening another tab; the grouping button inside the
+        panel additionally switches between source and dimension grouping. Expand a dimension to inspect its
+        ordered formula.
         The combined multiplier is NOT Antimatter/sec. Source overview defaults to exact Direct-step impacts
         for speed, and the Impact toggle can opt into counterfactual Final impacts when needed.
       </p>
       <p v-if="currentKey === 'AM'" class="c-multiplier-coverage-warning">
+        Antimatter production attribution remains approximate.
         Base AD1 Production and one Tickspeed rate are expandable as in the original analysis.
         Production powers and caps use checkpoints from the actual gameplay getter;
         loss is measured at the cap itself, not estimated from the product of eight dimension multipliers.
@@ -244,6 +331,42 @@ export default {
   width: 100%;
   max-width: 100rem;
   margin-bottom: 0.7rem;
+}
+
+.l-dimension-inline-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.c-dimension-step-btn {
+  width: 2.8rem;
+  min-height: 2.8rem;
+  padding: 0.2rem;
+  font-family: Typewriter;
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--color-text);
+  background-color: var(--color-base);
+  border: var(--var-border-width, 0.2rem) solid var(--color-text);
+  border-radius: var(--var-border-radius, 0.4rem);
+  cursor: pointer;
+}
+
+.c-dimension-step-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.c-dimension-inline-select {
+  min-height: 2.8rem;
+  padding: 0.2rem 0.5rem;
+  font-family: Typewriter;
+  font-size: 1.1rem;
+  color: var(--color-text);
+  background-color: var(--color-base);
+  border: var(--var-border-width, 0.2rem) solid var(--color-text);
+  border-radius: var(--var-border-radius, 0.4rem);
 }
 
 .c-multiplier-nav-btn {

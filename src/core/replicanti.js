@@ -1,3 +1,5 @@
+import { boundedPositivePower, boundedPositiveProduct, boundedPositiveSum } from "./finite-decimal";
+
 // Slowdown parameters for replicanti growth, interval will increase by scaleFactor for every scaleLog10
 // OoM past the cap (default is 308.25 (log10 of 1.8e308), 1.2, Number.MAX_VALUE)
 export const ReplicantiGrowth = {
@@ -37,7 +39,11 @@ export const ReplicantiMultipliers = {
     return replicantiMultToPower(this.dtMult);
   },
   get ipMult() {
-    return Replicanti.amount.powEffectOf(AlchemyResource.exponential);
+    let result = Replicanti.amount;
+    AlchemyResource.exponential.applyEffect(power => {
+      result = boundedPositivePower(result, power);
+    });
+    return result;
   },
   get ipPow() {
     return replicantiMultToPower(this.ipMult);
@@ -96,27 +102,42 @@ export function replicantiGalaxyRequest() {
 // Returns the remaining unused gain factor
 function fastReplicantiBelow308(log10GainFactor, isAutobuyerActive) {
   const shouldBuyRG = isAutobuyerActive && !RealityUpgrade(6).isLockingMechanics;
-  // More than e308 galaxies per tick causes the game to die, and I don't think it's worth the performance hit of
-  // Decimalifying the entire calculation.  And yes, this can and does actually happen super-lategame.
-  const uncappedAmount = DC.E1.pow(log10GainFactor.plus(Replicanti.amount.add(1).log10()));
-  // Checking for uncapped equaling zero is because Decimal.pow returns zero for overflow for some reason
-  if (log10GainFactor.gt(Number.MAX_VALUE) || uncappedAmount.eq(0)) {
+  const capAtCurrentLimit = () => {
     if (shouldBuyRG) {
       addReplicantiGalaxies(Replicanti.galaxies.max.sub(player.replicanti.galaxies));
     }
     Replicanti.amount = replicantiCap();
     // Basically we've used nothing.
     return log10GainFactor;
+  };
+
+  if (!Decimal.isFinite(log10GainFactor)) throw new Error("Invalid Replicanti logarithmic gain");
+  // Keep the existing high-gain shortcut ahead of the power calculation. The
+  // shortcut was already the intended behavior, but Decimal.pow can become
+  // non-finite before the old post-calculation check gets a chance to run.
+  if (log10GainFactor.gt(Number.MAX_VALUE)) return capAtCurrentLimit();
+
+  const currentLog = Replicanti.amount.add(1).log10();
+  if (!Decimal.isFinite(currentLog)) throw new Error("Invalid Replicanti amount logarithm");
+  const uncappedExponent = log10GainFactor.plus(currentLog);
+  if (!Decimal.isFinite(uncappedExponent) || uncappedExponent.gt(Number.MAX_VALUE)) {
+    return capAtCurrentLimit();
   }
 
+  // More than e308 galaxies per tick causes the game to die, and I don't think it's worth the performance hit of
+  // Decimalifying the entire calculation.  And yes, this can and does actually happen super-lategame.
+  const uncappedAmount = DC.E1.pow(uncappedExponent);
+  // Checking for uncapped equaling zero is because Decimal.pow returns zero for overflow for some reason
+  if (!Decimal.isFinite(uncappedAmount) || uncappedAmount.eq(0)) return capAtCurrentLimit();
+
   if (!shouldBuyRG) {
-    const remainingGain = log10GainFactor.minus(replicantiCap().log10().sub(Replicanti.amount.add(1).log10())).clampMin(0);
+    const remainingGain = log10GainFactor.minus(replicantiCap().log10().sub(currentLog)).clampMin(0);
     Replicanti.amount = Decimal.min(uncappedAmount, replicantiCap());
     return remainingGain;
   }
 
   const gainNeededPerRG = DC.NUMMAX.log10();
-  const replicantiExponent = log10GainFactor.add(Replicanti.amount.add(1).log10());
+  const replicantiExponent = log10GainFactor.add(currentLog);
   const toBuy = Decimal.floor(Decimal.min(new Decimal(replicantiExponent.div(gainNeededPerRG)),
     Replicanti.galaxies.max.sub(player.replicanti.galaxies)));
   const maxUsedGain = gainNeededPerRG.times(toBuy).add(replicantiCap().log10()).sub(Replicanti.amount.log10());
@@ -180,52 +201,71 @@ export function getReplicantiInterval(overCapOverride, intervalIn) {
 // value in the multiplier tab too
 export function totalReplicantiSpeedMult(overCap) {
   let totalMult = DC.D1;
+  // Keep this product finite at the Decimal representation boundary. This does
+  // not introduce a gameplay cap; it only avoids constructing Infinity before
+  // the interval code has a chance to use the existing maximum Decimal value.
+  const multiply = factor => {
+    totalMult = boundedPositiveProduct(totalMult, factor);
+  };
+  const multiplyEffect = effectSource => effectSource.applyEffect(multiply);
 
   // These are the only effects active in Pelle - the function shortcuts everything else if we're in Pelle
-  totalMult = totalMult.times(PelleRifts.decay.effectValue);
-  totalMult = totalMult.times(Pelle.specialGlyphEffect.replication);
-  totalMult = totalMult.times(ShopPurchase.replicantiPurchases.currentMult);
+  multiply(PelleRifts.decay.effectValue);
+  multiply(Pelle.specialGlyphEffect.replication);
+  multiply(ShopPurchase.replicantiPurchases.currentMult);
   if (Pelle.isDisabled("replicantiIntervalMult")) {
     let pelleRep = DC.D1;
-    if (PelleAchievementUpgrade.achievement81.canBeApplied) pelleRep = pelleRep.times(Effects.product(Achievement(81)));
-    if (PelleDestructionUpgrade.timestudy62.canBeApplied) pelleRep = pelleRep.times(Effects.product(TimeStudy(62)));
-    if (PelleDestructionUpgrade.timestudy213.canBeApplied) pelleRep = pelleRep.times(Effects.product(TimeStudy(213)));
-    if (PelleRealityUpgrade.replicativeAmplifier.canBeApplied) pelleRep = pelleRep.timesEffectOf(RealityUpgrade(2));
-    if (PelleRealityUpgrade.cosmicallyDuplicate.canBeApplied) pelleRep = pelleRep.times(Effects.product(RealityUpgrade(6)));
-    if (PelleRealityUpgrade.replicativeRapidity.canBeApplied) pelleRep = pelleRep.times(Effects.product(RealityUpgrade(23)));
-    if (PelleDestructionUpgrade.timestudy132.canBeApplied) pelleRep = pelleRep.times(3);
-    if (PelleAchievementUpgrade.achievement134.canBeApplied && !overCap) pelleRep = pelleRep.times(2);
-    if (PelleDestructionUpgrade.destroyedGlyphEffects.canBeApplied) pelleRep = pelleRep.times(getAdjustedGlyphEffect("replicationspeed"));
-    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) pelleRep = pelleRep.times(Decimal.clampMin(Decimal.log10(Replicanti.amount.add(1)).times(getSecondaryGlyphEffect("replicationdtgain")), 1));
-    if (PelleCelestialUpgrade.raV3.canBeApplied) pelleRep = pelleRep.timesEffectOf(Ra.unlocks.continuousTTBoost.effects.replicanti);
-    if (PelleAlchemyUpgrade.alchemyReplication.canBeApplied) pelleRep = pelleRep.timesEffectOf(AlchemyResource.replication);
-    totalMult = totalMult.times(pelleRep);
+    const multiplyPelle = factor => {
+      pelleRep = boundedPositiveProduct(pelleRep, factor);
+    };
+    const multiplyPelleEffect = effectSource => effectSource.applyEffect(multiplyPelle);
+    if (PelleAchievementUpgrade.achievement81.canBeApplied) multiplyPelle(Effects.product(Achievement(81)));
+    if (PelleDestructionUpgrade.timestudy62.canBeApplied) multiplyPelle(Effects.product(TimeStudy(62)));
+    if (PelleDestructionUpgrade.timestudy213.canBeApplied) multiplyPelle(Effects.product(TimeStudy(213)));
+    if (PelleRealityUpgrade.replicativeAmplifier.canBeApplied) multiplyPelleEffect(RealityUpgrade(2));
+    if (PelleRealityUpgrade.cosmicallyDuplicate.canBeApplied) multiplyPelleEffect(RealityUpgrade(6));
+    if (PelleRealityUpgrade.replicativeRapidity.canBeApplied) multiplyPelleEffect(RealityUpgrade(23));
+    if (PelleDestructionUpgrade.timestudy132.canBeApplied) multiplyPelle(3);
+    if (PelleAchievementUpgrade.achievement134.canBeApplied && !overCap) multiplyPelle(2);
+    if (PelleDestructionUpgrade.destroyedGlyphEffects.canBeApplied) {
+      multiplyPelle(getAdjustedGlyphEffect("replicationspeed"));
+    }
+    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) {
+      multiplyPelle(Decimal.clampMin(
+        Decimal.log10(Replicanti.amount.add(1)).times(getSecondaryGlyphEffect("replicationdtgain")), 1));
+    }
+    if (PelleCelestialUpgrade.raV3.canBeApplied) {
+      multiplyPelleEffect(Ra.unlocks.continuousTTBoost.effects.replicanti);
+    }
+    if (PelleAlchemyUpgrade.alchemyReplication.canBeApplied) multiplyPelleEffect(AlchemyResource.replication);
+    multiply(pelleRep);
     return totalMult;
   }
 
-  const preCelestialEffects = Effects.product(
+  const preRealityEffects = Effects.product(
     Achievement(81),
     TimeStudy(62),
     TimeStudy(213),
-    RealityUpgrade(6),
-    RealityUpgrade(23),
   );
-  totalMult = totalMult.times(preCelestialEffects);
-  totalMult = totalMult.timesEffectOf(RealityUpgrade(2));
+  multiply(preRealityEffects);
+  multiplyEffect(RealityUpgrade(6));
+  multiplyEffect(RealityUpgrade(23));
+  multiplyEffect(RealityUpgrade(2));
   if (TimeStudy(132).isBought) {
-    totalMult = totalMult.times((Perk.studyPassive.isBought && !player.disablePostReality) ? 3 : 1.5);
+    multiply((Perk.studyPassive.isBought && !player.disablePostReality) ? 3 : 1.5);
   }
 
   if (!overCap && Achievement(134).isUnlocked && !player.disablePostReality) {
-    totalMult = totalMult.times(2);
+    multiply(2);
   }
-  totalMult = totalMult.times(getAdjustedGlyphEffect("replicationspeed"));
+  multiply(getAdjustedGlyphEffect("replicationspeed"));
   if (GlyphAlteration.isAdded("replication")) {
-    totalMult = totalMult.times(ReplicantiMultipliers.dtMult);
+    multiply(ReplicantiMultipliers.dtMult);
   }
-  totalMult = totalMult.timesEffectsOf(AlchemyResource.replication, Ra.unlocks.continuousTTBoost.effects.replicanti);
+  multiplyEffect(AlchemyResource.replication);
+  multiplyEffect(Ra.unlocks.continuousTTBoost.effects.replicanti);
 
-  if (LHC.voidRunning) totalMult = totalMult.timesEffectOf(NullUpgrade.replicantiSpeedMult);
+  if (LHC.voidRunning) multiplyEffect(NullUpgrade.replicantiSpeedMult);
 
   return totalMult;
 }
@@ -287,9 +327,17 @@ export function replicantiLoop(diff) {
       // in a single tick in Pelle.
       const intervalRatio = getReplicantiInterval(true).div(interval);
       remainingGain = remainingGain.div(intervalRatio);
-      Replicanti.amount =
-        Decimal.exp(remainingGain.div(LOG10_E).times(postScale).plus(1).ln().div(postScale).add(
-        Replicanti.amount.clampMin(1).ln()));
+      // Cardinality approaches a scale factor of 1 and rounds to exactly 1 at
+      // extreme levels. lim[p->0] ln(1 + gain*p)/p = gain; dividing by p=0
+      // would otherwise inject NaN into saved Replicanti and all dependent systems.
+      const gain = remainingGain.div(LOG10_E);
+      const scaledGain = postScale === 0
+        ? gain
+        : gain.times(postScale).add(1).ln().div(postScale);
+      const totalLog = scaledGain.add(Replicanti.amount.clampMin(1).ln());
+      // pow10 keeps the established finite Decimal boundary, rather than
+      // allowing an unrepresentable exp() result into player state.
+      Replicanti.amount = boundedPositivePower(10, totalLog.div(Math.LN10));
     }
   } else if (tickCount.gt(1)) {
     // Multiple ticks but "slow" gain: This happens at low replicanti chance and amount with a fast interval, which
@@ -784,19 +832,24 @@ export const Replicanti = {
   galaxies: {
     isPlayerHoldingR: false,
     get multiplication() {
-      return GalacticPowers.replicantiGalaxies.isUnlocked ? GalacticPowers.replicantiGalaxies.reward : 1;
+      return new Decimal(GalacticPowers.replicantiGalaxies.isUnlocked ?
+        GalacticPowers.replicantiGalaxies.reward : 1);
     },
     get bought() {
       return player.replicanti.galaxies;
     },
     get extra() {
-      return Decimal.floor((new Decimal().plusEffectsOf(
-        TimeStudy(225),
-        TimeStudy(226)
-      ).add(Effarig.bonusRG)).times(TimeStudy(303).effectOrDefault(1)).times(this.multiplication).add(this.bought.times(this.multiplication - 1)));
+      // The Galactic Power reward can exceed Number.MAX_VALUE. Keep it as
+      // Decimal and avoid evaluating (Infinity - 1) in JS arithmetic.
+      const multiplier = this.multiplication;
+      const studyBonus = new Decimal().plusEffectsOf(TimeStudy(225), TimeStudy(226)).add(Effarig.bonusRG);
+      const scaledBonus = boundedPositiveProduct(
+        boundedPositiveProduct(studyBonus, TimeStudy(303).effectOrDefault(1)), multiplier);
+      const boughtBonus = boundedPositiveProduct(this.bought, multiplier.sub(1).max(0));
+      return Decimal.floor(boundedPositiveSum(scaledBonus, boughtBonus));
     },
     get total() {
-      return this.bought.add(this.extra);
+      return boundedPositiveSum(this.bought, this.extra);
     },
     get max() {
       return ReplicantiUpgrade.galaxies.value.add(ReplicantiUpgrade.galaxies.extra);

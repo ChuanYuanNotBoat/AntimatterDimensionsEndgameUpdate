@@ -5,6 +5,7 @@ import { ElectronRuntime, SteamRuntime } from "@/steam";
 import { deepmergeAll } from "@/utility/deepmerge";
 import { DEV } from "@/env";
 import { SpeedrunMilestones } from "./core/speedrun";
+import { boundedPositivePower, boundedPositiveProduct, boundedPositiveSum } from "./core/finite-decimal";
 import { Cloud } from "./core/storage";
 import { supportedBrowsers } from "./supported-browsers";
 
@@ -144,19 +145,21 @@ export function celestialBreakInfinity() {
 
 export function gainedInfinityPoints() {
   let positiveIPPowers = DC.D1;
-  if ((Pelle.isDoomed && PelleCelestialUpgrade.raTeresa3.canBeApplied) || GlyphAlteration.isAdded("infinity")) positiveIPPowers = positiveIPPowers.times(getSecondaryGlyphEffect("infinityIP"));
-  if (EndgameMastery(141).isBought) positiveIPPowers = positiveIPPowers.timesEffectsOf(EndgameMastery(141));
-  if (!player.disablePostReality) positiveIPPowers = positiveIPPowers.times(AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
-  if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) positiveIPPowers = positiveIPPowers.times(ReplicantiMultipliers.ipPow);
-  if (Ascensions.ipA.isUnlocked) positiveIPPowers = positiveIPPowers.timesEffectOf(InfinityUpgrade.ipMult);
+  if ((Pelle.isDoomed && PelleCelestialUpgrade.raTeresa3.canBeApplied) || GlyphAlteration.isAdded("infinity")) positiveIPPowers = boundedPositiveProduct(positiveIPPowers, getSecondaryGlyphEffect("infinityIP"));
+  if (EndgameMastery(141).isBought) EndgameMastery(141).applyEffect(power => { positiveIPPowers = boundedPositiveProduct(positiveIPPowers, power); });
+  if (!player.disablePostReality) positiveIPPowers = boundedPositiveProduct(positiveIPPowers, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
+  if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) positiveIPPowers = boundedPositiveProduct(positiveIPPowers, ReplicantiMultipliers.ipPow);
+  if (Ascensions.ipA.isUnlocked) InfinityUpgrade.ipMult.applyEffect(power => { positiveIPPowers = boundedPositiveProduct(positiveIPPowers, power); });
+  // Keep the divisor in Decimal space: its late-game power compensation can
+  // exceed Number.MAX_VALUE, for which toNumber() would return Infinity.
   const div = new Decimal(Effects.min(
     308,
     Achievement(103),
     TimeStudy(111),
     EndgameMastery(151)
-  )).max(positiveIPPowers.times(2)).toNumber();
+  )).max(boundedPositiveProduct(positiveIPPowers, 2));
   if (Pelle.isDisabled("IPMults")) {
-    let ip = Decimal.pow10(player.records.thisInfinity.maxAM.add(1).log10().div(div).sub(0.75))
+    let ip = boundedPositivePower(10, player.records.thisInfinity.maxAM.add(1).log10().div(div).sub(0.75))
       .timesEffectsOf(PelleRifts.vacuum)
       .times(Pelle.specialGlyphEffect.infinity);
     if (PelleDestructionUpgrade.timestudy41.canBeApplied) ip = ip.timesEffectOf(TimeStudy(41));
@@ -173,44 +176,44 @@ export function gainedInfinityPoints() {
     if (PelleDestructionUpgrade.reenableIPDilationUpgrade.canBeApplied) ip = ip.timesEffectOf(DilationUpgrade.ipMultDT);
     if (PelleDestructionUpgrade.destroyedGlyphEffects.canBeApplied) ip = ip.times(getAdjustedGlyphEffect("infinityIP"));
     if (PelleAlchemyUpgrade.alchemyExponential.canBeApplied && Replicanti.areUnlocked) ip = ip.times(ReplicantiMultipliers.ipMult);
-    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) ip = ip.pow(getSecondaryGlyphEffect("infinityIP"));
-    if (EndgameMastery(141).isBought) ip = ip.powEffectsOf(EndgameMastery(141));
-    if (!player.disablePostReality) ip = ip.pow(AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
-    if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) ip = ip.pow(ReplicantiMultipliers.ipPow);
-    if (Ascensions.ipA.isUnlocked) ip = ip.powEffectOf(InfinityUpgrade.ipMult);
+    if (PelleCelestialUpgrade.raTeresa3.canBeApplied) ip = boundedPositivePower(ip, getSecondaryGlyphEffect("infinityIP"));
+    if (EndgameMastery(141).isBought) EndgameMastery(141).applyEffect(power => { ip = boundedPositivePower(ip, power); });
+    if (!player.disablePostReality) ip = boundedPositivePower(ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
+    if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) ip = boundedPositivePower(ip, ReplicantiMultipliers.ipPow);
+    if (Ascensions.ipA.isUnlocked) InfinityUpgrade.ipMult.applyEffect(power => { ip = boundedPositivePower(ip, power); });
     return ip.floor();
   }
   let ip = player.break
-    ? Decimal.pow10(player.records.thisInfinity.maxAM.add(1).log10().div(div).sub(0.75))
-    : new Decimal(308 / div);
+    ? boundedPositivePower(10, player.records.thisInfinity.maxAM.add(1).log10().div(div).sub(0.75))
+    : new Decimal(308).div(div);
   if (Effarig.isRunning && Effarig.currentStage === EFFARIG_STAGES.ETERNITY) {
     ip = ip.min(DC.E200);
   }
-  ip = ip.times(GameCache.totalIPMult.value);
+  ip = boundedPositiveProduct(ip, GameCache.totalIPMult.value);
   if (Teresa.isRunning) {
-    ip = ip.pow(0.55);
+    ip = boundedPositivePower(ip, 0.55);
   } else if (V.isRunning) {
-    ip = ip.pow(0.5);
+    ip = boundedPositivePower(ip, 0.5);
   } else if (Laitela.isRunning) {
     ip = dilatedValueOf(ip);
   }
   if (GlyphAlteration.isAdded("infinity")) {
-    ip = ip.pow(getSecondaryGlyphEffect("infinityIP"));
+    ip = boundedPositivePower(ip, getSecondaryGlyphEffect("infinityIP"));
   }
   if (EndgameMastery(141).isBought) {
-    ip = ip.powEffectsOf(EndgameMastery(141));
+    EndgameMastery(141).applyEffect(power => { ip = boundedPositivePower(ip, power); });
   }
   if (!player.disablePostReality) {
-    ip = ip.pow(AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
+    ip = boundedPositivePower(ip, AlphaUnlocks.infinity.effects.buff.effectOrDefault(1));
   }
 
   if (Alpha.isRunning && Alpha.currentStage < 12) {
-    ip = ip.pow(AlphaUnlocks.infinityDimensions.effects.nerf.effectOrDefault(1));
+    ip = boundedPositivePower(ip, AlphaUnlocks.infinityDimensions.effects.nerf.effectOrDefault(1));
   }
 
   const topTier = Alpha.currentStage >= 18 ? 1 : 0;
   if (Alpha.isRunning && player.challenge.eternity.current > topTier) {
-    ip = ip.pow(Effects.min(
+    ip = boundedPositivePower(ip, Effects.min(
       1,
       AlphaUnlocks.eternityChallengeUnlock.effects.nerf,
       AlphaUnlocks.ecCompletion1.effects.nerf,
@@ -219,10 +222,10 @@ export function gainedInfinityPoints() {
   }
 
   if (AlchemyResource.exponential.amount > 0 && ResurgenceUpgrade.repSurge.isBought && !player.disablePostReality) {
-    ip = ip.pow(ReplicantiMultipliers.ipPow);
+    ip = boundedPositivePower(ip, ReplicantiMultipliers.ipPow);
   }
 
-  if (Ascensions.ipA.isUnlocked) ip = ip.powEffectOf(InfinityUpgrade.ipMult);
+  if (Ascensions.ipA.isUnlocked) InfinityUpgrade.ipMult.applyEffect(power => { ip = boundedPositivePower(ip, power); });
 
   if (ResurgenceUpgrade.ipSurge.isBought && !player.disablePostReality) ip = ip.min(player.antimatter);
 
@@ -259,36 +262,41 @@ function totalEPMult() {
 
 export function gainedEternityPoints() {
   let positiveEPPowers = DC.D1;
-  if (GlyphAlteration.isAdded("time")) positiveEPPowers = positiveEPPowers.times(getSecondaryGlyphEffect("timeEP"));
-  if (EndgameMastery(142).isBought) positiveEPPowers = positiveEPPowers.timesEffectsOf(EndgameMastery(142));
-  positiveEPPowers = positiveEPPowers.timesEffectOf(Ra.unlocks.eternityPointPower);
-  positiveEPPowers = positiveEPPowers.timesEffectOf(Achievement(232));
-  if (Ascensions.epA.isUnlocked) positiveEPPowers = positiveEPPowers.timesEffectOf(EternityUpgrade.epMult);
-  const div = new Decimal(308 - PelleRifts.recursion.effectValue.toNumber()).max(positiveEPPowers.times(2)).toNumber();
-  let ep = DC.D5.pow(player.records.thisEternity.maxIP.plus(
-    gainedInfinityPoints()).add(1).log10().div(div).sub(0.7)).times(totalEPMult());
+  if (GlyphAlteration.isAdded("time")) positiveEPPowers = boundedPositiveProduct(positiveEPPowers, getSecondaryGlyphEffect("timeEP"));
+  if (EndgameMastery(142).isBought) EndgameMastery(142).applyEffect(power => { positiveEPPowers = boundedPositiveProduct(positiveEPPowers, power); });
+  Ra.unlocks.eternityPointPower.applyEffect(power => { positiveEPPowers = boundedPositiveProduct(positiveEPPowers, power); });
+  Achievement(232).applyEffect(power => { positiveEPPowers = boundedPositiveProduct(positiveEPPowers, power); });
+  if (Ascensions.epA.isUnlocked) EternityUpgrade.epMult.applyEffect(power => { positiveEPPowers = boundedPositiveProduct(positiveEPPowers, power); });
+  // Avoid double conversion: a huge recursion effect or positive EP power
+  // can turn this divisor into +/-Infinity and poison the reward formula.
+  const div = new Decimal(308).sub(PelleRifts.recursion.effectValue)
+    .max(boundedPositiveProduct(positiveEPPowers, 2));
+  let ep = boundedPositiveProduct(boundedPositivePower(DC.D5, player.records.thisEternity.maxIP.plus(
+    gainedInfinityPoints()).add(1).log10().div(div).sub(0.7)), totalEPMult());
 
   if (Teresa.isRunning) {
-    ep = ep.pow(0.55);
+    ep = boundedPositivePower(ep, 0.55);
   } else if (V.isRunning) {
-    ep = ep.pow(0.5);
+    ep = boundedPositivePower(ep, 0.5);
   } else if (Laitela.isRunning) {
     ep = dilatedValueOf(ep);
   }
   if (GlyphAlteration.isAdded("time")) {
-    ep = ep.pow(getSecondaryGlyphEffect("timeEP"));
+    ep = boundedPositivePower(ep, getSecondaryGlyphEffect("timeEP"));
   }
   if (EndgameMastery(142).isBought) {
-    ep = ep.powEffectsOf(EndgameMastery(142));
+    EndgameMastery(142).applyEffect(power => { ep = boundedPositivePower(ep, power); });
   }
-  ep = ep.powEffectOf(Ra.unlocks.eternityPointPower);
+  Ra.unlocks.eternityPointPower.applyEffect(power => { ep = boundedPositivePower(ep, power); });
 
-  ep = ep.powEffectOf(Achievement(232));
+  Achievement(232).applyEffect(power => { ep = boundedPositivePower(ep, power); });
 
-  if (Alpha.isRunning) ep = ep.pow(AlphaUnlocks.eternityChallenge10.effects.nerf.effectOrDefault(1));
-  if (Alpha.isRunning) ep = ep.pow(AlphaUnlocks.timeDimension8.effects.nerf.effectOrDefault(1));
+  if (Alpha.isRunning) ep = boundedPositivePower(ep, AlphaUnlocks.eternityChallenge10.effects.nerf.effectOrDefault(1));
+  if (Alpha.isRunning) ep = boundedPositivePower(ep, AlphaUnlocks.timeDimension8.effects.nerf.effectOrDefault(1));
 
-  if (Ascensions.epA.isUnlocked) ep = ep.powEffectOf(EternityUpgrade.epMult);
+  if (Ascensions.epA.isUnlocked) {
+    EternityUpgrade.epMult.applyEffect(power => { ep = boundedPositivePower(ep, power); });
+  }
 
   if (Alpha.isRunning && Alpha.currentStage < 27) ep = ep.min(DC.E3350);
 
@@ -1059,7 +1067,10 @@ export function gameLoop(passedDiff, options = {}) {
   const repDiff = Alpha.isRunning ? Decimal.pow(diff, 0.1) : diff;
   replicantiLoop(repDiff);
 
-  Currency.dilatedTime.add(getDilationGainPerSecond().times(realDiff).div(1000));
+  // Clamp both the gain and the final currency addition before writing to the
+  // guarded save. This does not alter the source rate below the engine ceiling.
+  Currency.dilatedTime.value = boundedPositiveSum(Currency.dilatedTime.value,
+    boundedPositiveProduct(getDilationGainPerSecond(), new Decimal(realDiff).div(1000)));
 
   updateTachyonGalaxies();
   Currency.timeTheorems.add(getTTPerSecond().times(Alpha.isRunning ? realDiff : diff).div(1000));
@@ -1089,7 +1100,8 @@ export function gameLoop(passedDiff, options = {}) {
   // dilation, but the TP gain function is also coded to behave differently if it's active
   const teresa1 = player.dilation.active && (Ra.unlocks.autoTP.canBeApplied || EndgameMilestone.startRa.isReached);
   const teresa25 = !isInCelestialReality() && Ra.unlocks.unlockDilationStartingTP.canBeApplied;
-  if (false && (teresa1 || teresa25) && !Pelle.isDoomed && !player.disablePostReality) rewardTP();
+if (false && (teresa1 || teresa25) &&
+    !Pelle.isDoomed && !player.disablePostReality) rewardTP();
 
   if (DivinityMilestone.divineDimensions.isReached && Pelle.isDoomed) {
     player.celestials.pelle.remnants = player.celestials.pelle.remnants.add(Decimal.max(Pelle.remnantsGain, 0));
@@ -1176,17 +1188,7 @@ export function gameLoop(passedDiff, options = {}) {
   player.records.bestAntimatterExponentOutsideDoom = Decimal.max(Decimal.log10(
     Decimal.max(player.records.totalAntimatterOutsideDoom, 1)), player.records.bestAntimatterExponentOutsideDoom);
 
-  player.records.thisReality.galaxies = Decimal.max(player.records.thisReality.galaxies, Replicanti.galaxies.total.add(
-    player.galaxies).add(player.dilation.totalTachyonGalaxies).add(GalacticPower.freeGalaxies).add(GalaxyGenerator.galaxies));
-  if (GalacticPowers.galacticAscension.isUnlocked) player.records.thisReality.galaxies = Decimal.max(
-    player.records.thisReality.galaxies, Replicanti.galaxies.total.max(1).times(player.galaxies.max(1)).times(
-    player.dilation.totalTachyonGalaxies.max(1)).times(GalacticPower.freeGalaxies.max(1)));
-
-  player.records.bestEndgame.galaxies = Decimal.max(player.records.bestEndgame.galaxies, Replicanti.galaxies.total.add(
-    player.galaxies).add(player.dilation.totalTachyonGalaxies).add(GalacticPower.freeGalaxies).add(GalaxyGenerator.galaxies));
-  if (GalacticPowers.galacticAscension.isUnlocked) player.records.bestEndgame.galaxies = Decimal.max(
-    player.records.bestEndgame.galaxies, Replicanti.galaxies.total.max(1).times(player.galaxies.max(1)).times(
-    player.dilation.totalTachyonGalaxies.max(1)).times(GalacticPower.freeGalaxies.max(1)));
+  updateGalaxyPeakRecords();
 
   if (Enslaved.canTickHintTimer) {
     player.celestials.enslaved.hintUnlockProgress += Enslaved.isRunning ? realDiff : (realDiff * 0.4);
@@ -1362,15 +1364,16 @@ function passivePrestigeGen(realDiff) {
         Alpha.isDestroyed ? player.records.bestInfinity.time : Decimal.clampMin(50, player.records.bestInfinity.time)));
       if (!Alpha.isRunning) infGen = infGen.plus(new Decimal(0.5).times(Time.deltaTimeMs).div(
         Alpha.isDestroyed ? player.records.bestInfinity.time : Decimal.clampMin(50, player.records.bestInfinity.time)));
-      infGen = infGen.timesEffectsOf(
-        RealityUpgrade(5),
-        RealityUpgrade(7),
-        Ra.unlocks.continuousTTBoost.effects.infinity
-      );
-      infGen = infGen.times(getAdjustedGlyphEffect("infinityinfmult"));
+      // Preserve applyEffect unlock semantics while bounding each multiplication;
+      // overflowing intermediate Decimal layers must never reach the player setter.
+      for (const effect of [RealityUpgrade(5), RealityUpgrade(7), Ra.unlocks.continuousTTBoost.effects.infinity]) {
+        effect?.applyEffect(value => { infGen = boundedPositiveProduct(infGen, value); });
+      }
+      infGen = boundedPositiveProduct(infGen, getAdjustedGlyphEffect("infinityinfmult"));
     }
     if (RealityUpgrade(11).isBought && (!Pelle.isDoomed || PelleRealityUpgrade.boundlessFlow.canBeApplied) && !player.disablePostReality) {
-      infGen = infGen.plus(RealityUpgrade(11).effectValue.times(Time.deltaTime));
+      infGen = boundedPositiveSum(infGen,
+        boundedPositiveProduct(RealityUpgrade(11).effectValue, Time.deltaTime));
     }
     if (EffarigUnlock.eternity.isUnlocked && (!Pelle.isDoomed || PelleCelestialUpgrade.effarigRewards.canBeApplied)) {
       // We consider half of the eternities we gained above this tick
@@ -1378,12 +1381,20 @@ function passivePrestigeGen(realDiff) {
       // count here. This gives us the desirable behavior that
       // infinities and eternities gained overall will be the same
       // for two ticks as for one tick of twice the length.
-      infGen = infGen.plus(gainedInfinities().times(
-        Currency.eternities.gte(DC.E9E15) ? Currency.eternities.value : Currency.eternities.value.minus(eternitiedGain.div(2).floor())).times(Time.deltaTime));
+      const eligibleEternities = Currency.eternities.gte(DC.E9E15)
+        ? Currency.eternities.value
+        : Currency.eternities.value.minus(eternitiedGain.div(2).floor());
+      // The product can exceed Decimal's finite layer range in late-game/offline simulation.
+      // Bound *before* multiplying, not after an invalid layer has already been created.
+      const milestoneGain = boundedPositiveProduct(
+        boundedPositiveProduct(gainedInfinities(), eligibleEternities), Time.deltaTime);
+      infGen = boundedPositiveSum(infGen, milestoneGain);
     }
-    infGen = infGen.plus(player.partInfinitied);
-    Currency.infinities.add(infGen.floor());
-    player.partInfinitied = infGen.minus(infGen.floor()).toNumber();
+    infGen = boundedPositiveSum(infGen, player.partInfinitied);
+    const wholeInfinities = infGen.floor();
+    // The gain alone may be finite while current Infinities + gain is not.
+    Currency.infinities.value = boundedPositiveSum(Currency.infinities.value, wholeInfinities);
+    player.partInfinitied = infGen.minus(wholeInfinities).toNumber();
   }
 }
 
@@ -1521,6 +1532,43 @@ function updateImaginaryMachines(diff) {
 function updateDualMachines(diff) {
   MachineHandler.updateDMCap();
   Currency.dualMachines.add(MachineHandler.gainedDualMachines(diff));
+}
+
+// Records are peak galaxy counts, not an additional gameplay source. Calculate
+// the old additive/multiplicative totals once and bound only unrepresentable
+// intermediate record arithmetic; do not reset existing peaks.
+function updateGalaxyPeakRecords() {
+  const sources = [
+    ["Replicanti", Replicanti.galaxies.total],
+    ["Antimatter", player.galaxies],
+    ["Tachyon", player.dilation.totalTachyonGalaxies],
+    ["Galactic Power", GalacticPower.freeGalaxies],
+    ["Galaxy Generator", GalaxyGenerator.galaxies]
+  ];
+  // Computed getters, unlike saved Decimal fields, are not guarded. Identify
+  // the original source if a formula is already invalid instead of writing NaN
+  // or silently turning an invalid formula into a legitimate zero.
+  for (const [name, value] of sources) {
+    if (!(value instanceof Decimal) ||
+        ![value.sign, value.layer, value.mag].every(Number.isFinite) ||
+        (value.lt(0) && name !== "Galaxy Generator")) {
+      throw new Error(`Invalid ${name} Galaxy source when recording Galaxy peak`);
+    }
+  }
+  // The generator's net count is generated minus spent and can be signed.
+  // Preserve its subtraction behavior instead of clamping the term to zero.
+  const fourTypes = sources.slice(0, 4);
+  const base = fourTypes.reduce((sum, [, value]) => boundedPositiveSum(sum, value), DC.D0);
+  const generator = sources[4][1];
+  const additive = generator.lt(0) ? base.add(generator) : boundedPositiveSum(base, generator);
+  let total = additive;
+  if (GalacticPowers.galacticAscension.isUnlocked) {
+    const multiplied = fourTypes.reduce(
+      (product, [, value]) => boundedPositiveProduct(product, value.max(1)), DC.D1);
+    total = Decimal.max(total, multiplied);
+  }
+  player.records.thisReality.galaxies = Decimal.max(player.records.thisReality.galaxies, total);
+  player.records.bestEndgame.galaxies = Decimal.max(player.records.bestEndgame.galaxies, total);
 }
 
 function updateTachyonGalaxies() {

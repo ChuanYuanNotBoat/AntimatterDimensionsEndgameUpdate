@@ -36,14 +36,20 @@ class D {
   static log10(value) { return new D(Math.log10(Number(value))); }
 }
 const e = (value = 1.12) => ({ effectValue: new D(value), effectOrDefault: () => new D(value),
-  canBeApplied: true, isBought: true, isUnlocked: true });
+  canBeApplied: true, isBought: true, isUnlocked: true,
+  // Real gameplay effects expose applyEffect; the finite-guarded formulas rely on it.
+  applyEffect(apply) { return apply(this.effectValue); } });
 const restoration = keys => Object.fromEntries(keys.split(' ').map(key => [key, { canBeApplied: true }]));
 function world(options = {}) {
   const doomed = !!options.doomed;
   const disabled = !!options.disablePostReality;
   const allow = restoration;
   const scenarios = {
-    Decimal: D, DC: { D0: new D(0), D1: new D(1) },
+    Decimal: D, DC: { D0: new D(0), D1: new D(1), E20000: new D(1e20000) },
+    // The gameplay formulas and the diagnostic traces share the finite-guard helpers; in this
+    // fully finite mocked world the plain arithmetic forms are exactly equivalent to them.
+    boundedPositivePower: (base, exponent) => new D(Math.pow(Number(base), Number(exponent))),
+    boundedPositiveProduct: (left, right) => new D(Number(left) * Number(right)),
     Pelle: { isDoomed: doomed, isDisabled: () => doomed, specialGlyphEffect: { replication: new D(1.24), dilation: new D(1.16) } },
     PelleRifts: { decay: { effectValue: new D(1.18) }, paradox: { milestones: [null, e(1.1)] } },
     ShopPurchase: { replicantiPurchases: { currentMult: 1.2 }, dilatedTimePurchases: { currentMult: 1.25 } },
@@ -94,7 +100,7 @@ const resources = [
   { name: 'Replicanti', source: 'core/replicanti.js', begin: 'export function totalReplicantiSpeedMult(', end: 'export function replicantiCap(',
     fn: 'totalReplicantiSpeedMult', trace: 'core/secret-formula/multiplier-tab/replicanti-breakdown.js',
     actual: c => c.totalReplicantiSpeedMult(c.Replicanti.amount.gt(c.replicantiCap())), missing: 'nullUpgrade' },
-  { name: 'DT', source: 'core/dilation.js', begin: 'export function getDilationGainPerSecond(', end: 'export function tachyonGainMultiplier(',
+  { name: 'DT', source: 'core/dilation.js', begin: 'function applyDilatedTimeSoftcap(', end: 'export function tachyonGainMultiplier(',
     fn: 'getDilationGainPerSecond', trace: 'core/secret-formula/multiplier-tab/dilated-time-breakdown.js',
     actual: c => c.getDilationGainPerSecond(), missing: 'nullUpgrade' },
   { name: 'Infinities', source: 'game.js', begin: 'export function gainedInfinities(', end: 'export function gainedCelestialInfinities(',

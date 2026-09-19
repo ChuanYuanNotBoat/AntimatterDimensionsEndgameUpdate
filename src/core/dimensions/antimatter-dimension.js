@@ -1,4 +1,5 @@
 import { DimensionState } from "./dimension";
+import { boundedPositivePower } from "../finite-decimal";
 
 // Multiplier applied to all Antimatter Dimensions, regardless of tier. This is cached using a Lazy
 // and invalidated every update.
@@ -72,7 +73,7 @@ export function getDimensionFinalMultiplierUncached(tier, redStarExponent = null
 
   const glyphDilationPowMultiplier = getAdjustedGlyphEffect("dilationpow");
   if (player.dilation.active || (PelleStrikes.dilation.hasStrike && !PelleStrikes.dilation.isDestroyed())) {
-    multiplier = dilatedValueOf(multiplier.pow(glyphDilationPowMultiplier));
+    multiplier = dilatedValueOf(boundedPositivePower(multiplier, glyphDilationPowMultiplier));
   } else if (Enslaved.isRunning) {
     multiplier = dilatedValueOf(multiplier);
   }
@@ -193,7 +194,12 @@ function applyNDPowers(mult, tier) {
     multiplier = multiplier.pow(InfinityChallenge(4).reward.effectValue);
   }
 
-  multiplier = multiplier.pow(glyphPowMultiplier * glyphEffarigPowMultiplier * Ra.momentumValue);
+  // powerpow may be a Decimal at extreme glyph levels. Native `*` invokes
+  // Decimal.valueOf(), which intentionally throws; keep the whole exponent in Decimal.
+  const glyphPowerExponent = new Decimal(glyphPowMultiplier)
+    .times(glyphEffarigPowMultiplier)
+    .times(Ra.momentumValue);
+  multiplier = multiplier.pow(glyphPowerExponent);
 
   multiplier = multiplier
     .powEffectsOf(
@@ -723,7 +729,11 @@ class AntimatterDimensionState extends DimensionState {
         const endgameMult = Pelle.isDoomed ? 1 + (Math.log10(Math.min(eg, 1e6) * Math.max(Math.log2(eg + 1) - Math.log2(5e5), 1) + 1) / 80) : 1 + (Math.log10(Math.min(eg, 1e6) * Math.max(Math.log2(eg + 1) - Math.log2(5e5), 1) + 1) / 200);
         const endgameMultValue = (EndgameMilestone.endgameAntimatter.isReached && !player.disablePostReality) ? endgameMult : 1;
         const pelleOnly = Pelle.isDoomed ? DivineDimensions.conversionFormula2 * Accelerators.cosmic.effectValue2 * EndgameMastery(222).effectOrDefault(1) * SingularityMilestone.singAMDoomDilation.effectOrDefault(1) : 1;
-        production = Decimal.pow10(Decimal.pow(log10, getAdjustedGlyphEffect("effarigantimatter") * Effects.product(EndgameMastery(101), EndgameUpgrade(15), SingularityMilestone.antimatterExponentPower, Achievement(233)) * endgameMultValue * EtherealStars.black.reward.toNumber() * pelleOnly));
+        production = boundedPositivePower(10, boundedPositivePower(log10,
+          new Decimal(getAdjustedGlyphEffect("effarigantimatter"))
+            .timesEffectsOf(EndgameMastery(101), EndgameUpgrade(15),
+              SingularityMilestone.antimatterExponentPower, Achievement(233))
+            .times(endgameMultValue).times(EtherealStars.black.reward).times(pelleOnly)));
       }
       record?.("productionPowers", "power", checkpoint,
         "NC3, Accelerator potency, Synergy, glyph/mastery/endgame and Black Star effects");

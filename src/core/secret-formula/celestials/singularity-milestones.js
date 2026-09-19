@@ -283,7 +283,9 @@ export const singularityMilestones = {
     repeat: new Decimal(0),
     limit: 1,
     description: "Singularities give a power effect to Time Theorem gain",
-    effect: () => 1 + Decimal.log10(Currency.singularities.value.add(1)).div(70).toNumber(),
+    // Time Theorem gain consumes this as a Decimal exponent. Avoid narrowing a
+    // finite high-layer singularity value into an infinite native Number.
+    effect: () => DC.D1.add(Decimal.log10(Currency.singularities.value.add(1)).div(70)),
     effectFormat: x => formatPow(x, 2, 3),
     upgradeDirection: LAITELA_UPGRADE_DIRECTION.BOOSTS_MAIN,
   },
@@ -301,8 +303,11 @@ export const singularityMilestones = {
     repeat: new Decimal(0),
     limit: 1,
     description: "Singularities boost pre-instability Glyph level",
-    effect: () => 1 + Decimal.clampMin((Decimal.log10(Currency.singularities.value).sub(20)).div(30), 0).toNumber(),
-    effectFormat: x => formatX(Math.clampMin(x, 1), 2, 2),
+    // This multiplier is later applied to a Decimal Glyph level. Keeping it as
+    // a Decimal preserves the original formula when log10(singularities) is
+    // larger than a native Number can represent.
+    effect: () => new Decimal(1).add(Decimal.clampMin((Decimal.log10(Currency.singularities.value).sub(20)).div(30), 0)),
+    effectFormat: x => formatX(Decimal.clampMin(x, 1), 2, 2),
     upgradeDirection: LAITELA_UPGRADE_DIRECTION.BOOSTS_MAIN,
   },
   darkFromDilatedTime: {
@@ -347,7 +352,8 @@ export const singularityMilestones = {
     repeat: new Decimal(0),
     limit: 1,
     description: "Singularities give a power effect to the other four types of Dimensions",
-    effect: () => Math.pow(1 + Decimal.log10(Currency.singularities.value.add(1)).div(125).toNumber(), 0.5),
+    // Keep the exponent Decimal: the logarithm may exceed native Number without being an invalid game value.
+    effect: () => Decimal.pow(Decimal.log10(Currency.singularities.value.add(1)).div(125).add(1), 0.5),
     effectFormat: x => formatPow(x, 2, 3),
     upgradeDirection: LAITELA_UPGRADE_DIRECTION.BOOSTS_MAIN,
   },

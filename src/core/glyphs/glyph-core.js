@@ -682,24 +682,27 @@ export const Glyphs = {
     }
   },
   get instabilityThreshold() {
-    return new Decimal(1000 + getAdjustedGlyphEffect("effarigglyph") + ImaginaryUpgrade(7).effectOrDefault(0) +
-      Ra.unlocks.instabilityDelay.effectOrDefault(0) + DualityUpgrade(7).effectOrDefault(0));
+    return new Decimal(1000).add(getAdjustedGlyphEffect("effarigglyph"))
+      .add(ImaginaryUpgrade(7).effectOrDefault(0)).add(Ra.unlocks.instabilityDelay.effectOrDefault(0))
+      .add(DualityUpgrade(7).effectOrDefault(0));
   },
   get hyperInstabilityThreshold() {
     return Decimal.add(3000, this.instabilityThreshold);
   },
   get extremeInstabilityThreshold() {
-    return new Decimal(75000 + Ra.unlocks.instabilityDelay.effectOrDefault(0) + DualityUpgrade(7).effectOrDefault(0) +
-      (EffarigUnlock.endgame.canBeApplied ? getAdjustedGlyphEffect("effarigglyph") : 0));
+    return new Decimal(75000).add(Ra.unlocks.instabilityDelay.effectOrDefault(0))
+      .add(DualityUpgrade(7).effectOrDefault(0))
+      .add(EffarigUnlock.endgame.canBeApplied ? getAdjustedGlyphEffect("effarigglyph") : 0);
   },
   get immenseInstabilityThreshold() {
-    return new Decimal(200000 + DualityUpgrade(7).effectOrDefault(0) +
-      (EffarigUnlock.endgame.canBeApplied ? getAdjustedGlyphEffect("effarigglyph") : 0) +
-      (DivinityMilestone.celestialSurge.isReached && !player.disablePostReality ? Ra.unlocks.instabilityDelay.effectOrDefault(0) : 0));
+    return new Decimal(200000).add(DualityUpgrade(7).effectOrDefault(0))
+      .add(EffarigUnlock.endgame.canBeApplied ? getAdjustedGlyphEffect("effarigglyph") : 0)
+      .add(DivinityMilestone.celestialSurge.isReached && !player.disablePostReality
+        ? Ra.unlocks.instabilityDelay.effectOrDefault(0) : 0);
   },
   get extensiveInstabilityThreshold() {
-    return new Decimal(1000000 + (DivinityMilestone.celestialSurge.isReached && !player.disablePostReality ?
-      Ra.unlocks.instabilityDelay.effectOrDefault(0) : 0));
+    return new Decimal(1000000).add(DivinityMilestone.celestialSurge.isReached && !player.disablePostReality
+      ? Ra.unlocks.instabilityDelay.effectOrDefault(0) : 0);
   },
   get prodigiousInstabilityThreshold() {
     return new Decimal(2500000 * (DivinityMilestone.ascendedSurge.isReached && !player.disablePostReality ? 1.1 : 1));

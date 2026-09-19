@@ -112,7 +112,11 @@ class BasicAlchemyResourceState extends AlchemyResourceState {
   }
 
   set highestRefinementValue(value) {
-    player.celestials.ra.highestRefinementValue[this._name] = Math.max(this.highestRefinementValue, value);
+    if (Number.isNaN(value)) throw new Error("Invalid glyph refinement value");
+    // The save stores Numbers; a huge valid glyph may only raise this record
+    // to the existing Ra alchemy cap, never Infinity.
+    player.celestials.ra.highestRefinementValue[this._name] =
+      Math.max(this.highestRefinementValue, Math.min(value, Ra.alchemyResourceCap));
   }
 
   get cap() {

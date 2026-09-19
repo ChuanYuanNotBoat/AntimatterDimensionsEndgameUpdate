@@ -7,6 +7,7 @@ import {
   orderedPowerStep,
   orderedTransformStep,
 } from "./ordered-breakdown";
+import { boundedPositivePower } from "../../finite-decimal";
 
 function epPositivePowers(skipKey = null) {
   let value = DC.D1;
@@ -31,11 +32,11 @@ function epDivisors(skipKey = null) {
   const final = skipKey === "powerCompensation"
     ? improved
     : Decimal.max(improved, epPositivePowers(skipKey).times(2));
-  return { improved, final, formulaFinal: final.toNumber() };
+  return { improved, final, formulaFinal: final };
 }
 
 function epFromDivisor(divisor) {
-  return DC.D5.pow(
+  return boundedPositivePower(DC.D5,
     player.records.thisEternity.maxIP
       .plus(gainedInfinityPoints())
       .add(1)

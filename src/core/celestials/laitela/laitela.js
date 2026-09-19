@@ -1,6 +1,7 @@
 import { Quotes } from "../quotes";
 
 import { DarkMatterDimensions } from "./dark-matter-dimension";
+import { boundedPositivePower, boundedPositiveProduct, boundedPositiveSum } from "../../finite-decimal";
 
 export const Laitela = {
   displayName: "Lai'tela",
@@ -48,10 +49,26 @@ export const Laitela = {
   },
   get matterExtraPurchaseFactor() {
     if ((Pelle.isDoomed && !PelleDestructionUpgrade.continuumBuff.canBeApplied) || player.disablePostReality) return DC.D1;
-    return (Decimal.pow(Decimal.pow(new Decimal(Decimal.log10(Currency.darkMatter.max.add(1))).div(50), 0.4).times(0.5).add(1).times(
-      SingularityMilestone.continuumMult.effectOrDefault(new Decimal(0)).add(1)).times(
-      DualityUpgrade(11).effectOrDefault(1)).times(Hadrons.continuumMultiplier).timesEffectOf(
-      SingularityMilestone.singContinuumBoost), DualityUpgrade(14).effectOrDefault(1))).times(
+    // This factor feeds Continuum amounts directly. At extreme progression, the
+    // original chained products and final Duality power can overflow Decimal's
+    // *representation* before ID8's production rate gets a chance to bound it.
+    // Preserve the original order, but cap each otherwise-valid operation at
+    // the established BEMAX gameplay boundary, before it can become Infinity.
+    const darkMatter = Currency.darkMatter.max;
+    if ([darkMatter.sign, darkMatter.layer, darkMatter.mag].some(x => !Number.isFinite(x))) {
+      throw new Error("Non-finite dark matter entering Continuum multiplier");
+    }
+    const darkMatterLog = new Decimal(Decimal.log10(boundedPositiveSum(darkMatter, 1))).div(50);
+    let factor = boundedPositiveSum(boundedPositiveProduct(boundedPositivePower(darkMatterLog, 0.4), 0.5), 1);
+    factor = boundedPositiveProduct(factor,
+      boundedPositiveSum(SingularityMilestone.continuumMult.effectOrDefault(new Decimal(0)), 1));
+    factor = boundedPositiveProduct(factor, DualityUpgrade(11).effectOrDefault(1));
+    factor = boundedPositiveProduct(factor, Hadrons.continuumMultiplier);
+    SingularityMilestone.singContinuumBoost.applyEffect(value => {
+      factor = boundedPositiveProduct(factor, value);
+    });
+    factor = boundedPositivePower(factor, DualityUpgrade(14).effectOrDefault(1));
+    return boundedPositiveProduct(factor,
       BreakInfinityUpgrade.autobuyerSpeed.chargedEffect.effectOrDefault(1));
   },
   get hadronizes() {
@@ -95,16 +112,41 @@ export const Laitela = {
     return Decimal.pow10(hadrAM).pow(Decimal.sqrt(20/3)).pow(currRoot);
   },
   get darkMatterMultGain() {
-    const extraPow = (ExpansionPack.laitelaPack.isBought && !player.disablePostReality)
-      ? Decimal.pow((Decimal.log10(Decimal.log10(Currency.darkMatter.value.add(1)).add(1)).add(1)).div(2), 2).add(1) : 1;
-    return Decimal.pow(Decimal.pow(Currency.darkMatter.value.dividedBy(this.annihilationDMRequirement)
-      .plus(1).log10(), 1.5).times(ImaginaryUpgrade(21).effectOrDefault(1)), extraPow);
+    const darkMatter = Currency.darkMatter.value;
+    // Overflow must be prevented before the final addition in annihilate():
+    // the expansion-pack exponent may make even a finite base unrepresentable.
+    if ([darkMatter.sign, darkMatter.layer, darkMatter.mag].some(x => !Number.isFinite(x)) || darkMatter.lt(0)) {
+      throw new Error("Invalid Dark Matter entering annihilation gain");
+    }
+    const imaginaryEffect = new Decimal(ImaginaryUpgrade(21).effectOrDefault(1));
+    if ([imaginaryEffect.sign, imaginaryEffect.layer, imaginaryEffect.mag]
+      .some(x => !Number.isFinite(x)) || imaginaryEffect.lt(0)) {
+      throw new Error("Invalid Imaginary Upgrade 21 annihilation effect");
+    }
+    let extraPow = DC.D1;
+    if (ExpansionPack.laitelaPack.isBought && !player.disablePostReality) {
+      const innerLog = Decimal.log10(boundedPositiveSum(darkMatter, 1));
+      const outerLog = Decimal.log10(boundedPositiveSum(innerLog, 1));
+      extraPow = boundedPositiveSum(boundedPositivePower(boundedPositiveSum(outerLog, 1).div(2), 2), 1);
+    }
+    const base = boundedPositiveProduct(boundedPositivePower(
+      boundedPositiveSum(darkMatter.dividedBy(this.annihilationDMRequirement), 1).log10(), 1.5), imaginaryEffect);
+    return boundedPositivePower(base, extraPow);
   },
   get darkMatterMult() {
     return this.celestial.darkMatterMult;
   },
+  get darkMatterMultAfterAnnihilation() {
+    const current = this.celestial.darkMatterMult;
+    if ([current.sign, current.layer, current.mag].some(x => !Number.isFinite(x)) || current.lte(0)) {
+      throw new Error("Invalid saved annihilation multiplier");
+    }
+    // Do not decrease an existing above-boundary multiplier from a legacy save.
+    if (current.gte(DC.BEMAX)) return current;
+    return boundedPositiveSum(current, this.darkMatterMultGain);
+  },
   get darkMatterMultRatio() {
-    return (this.celestial.darkMatterMult.add(this.darkMatterMultGain)).div(this.celestial.darkMatterMult);
+    return this.darkMatterMultAfterAnnihilation.div(this.darkMatterMult);
   },
   get darkMatterSoftcap1() {
     return DC.E10000.times(EtherealStars.white.reward).powEffectOf(EndgameMastery(262));
@@ -136,7 +178,7 @@ export const Laitela = {
   },
   annihilate(force) {
     if (!force && !this.canAnnihilate) return false;
-    this.celestial.darkMatterMult = this.celestial.darkMatterMult.add(this.darkMatterMultGain);
+    this.celestial.darkMatterMult = this.darkMatterMultAfterAnnihilation;
     if (force || !DivinityMilestone.hadronEmpowerment.isReached) DarkMatterDimensions.reset();
     Laitela.quotes.annihilation.show();
     Achievement(176).unlock();

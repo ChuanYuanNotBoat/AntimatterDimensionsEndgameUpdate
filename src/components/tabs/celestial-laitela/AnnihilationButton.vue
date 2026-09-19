@@ -26,7 +26,8 @@ export default {
     update() {
       this.darkMatter.copyFrom(Currency.darkMatter);
       this.darkMatterMult.copyFrom(Laitela.darkMatterMult);
-      this.darkMatterMultGain.copyFrom(Laitela.darkMatterMultGain);
+      // Preview the actual capped increase, not the theoretical gain at BEMAX.
+      this.darkMatterMultGain.copyFrom(Laitela.darkMatterMultAfterAnnihilation.sub(Laitela.darkMatterMult));
       this.autobuyerUnlocked = Autobuyer.annihilation.isUnlocked;
       this.annihilationButtonVisible = Laitela.canAnnihilate || this.autobuyerUnlocked;
       this.matterRequirement = Laitela.annihilationDMRequirement;

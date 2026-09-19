@@ -11,6 +11,11 @@ import { auditEtherealStar, starResourceForEntry } from "@/core/secret-formula/m
 // show them as nerfs
 const nerfBlacklist = ["IP_base", "EP_base", "TP_base"];
 
+// Session-scoped UI memory. These are deliberately NOT saved (player.options.multiplierTab keeps
+// its existing fields and the save format is unchanged); they reset when the page is reloaded.
+const sessionImpactFinal = { value: false };
+const sessionGroupSelection = new Map();
+
 function padPercents(percents) {
   // Add some padding to percents to prevent text flicker
   // Max length is for "-100.0%"
@@ -66,7 +71,8 @@ export default {
       replacePowers: player.options.multiplierTab.replacePowers,
       // Start with the exact, inexpensive step delta. Final is opt-in because
       // it must replay the complete formula once for each visible source.
-      orderedFinalImpact: false,
+      // Remembered across panels within this session only.
+      orderedFinalImpact: sessionImpactFinal.value,
       inNC12: false,
     };
   },
@@ -123,12 +129,41 @@ export default {
     canShowFinalImpact() {
       return this.resource.isOrdered;
     },
+    // AD/ID/TD root panels (Overall and per-tier views) get their Overall/by-dimension grouping
+    // from the analysis header's inline switch instead of the legacy grouping button.
+    isDimensionRoot() {
+      return this.isRoot && /^(AD|ID|TD)_total(_\d+)?$/.test(this.resource.key);
+    },
+    // Explanatory footnote for ordered panels, data-driven instead of a template branch chain.
+    orderedNoteText() {
+      const addUpTo = `do not add up to ${formatPercents(1)}`;
+      if (this.resource.key === "tickspeed_galaxies") {
+        return `Each source is measured by removing only that source's effective galaxy count while keeping all other
+          sources and upgrades fixed. These are counterfactual impacts, not additive percentages; Galactic Ascension
+          can multiply galaxy sources instead of adding them.`;
+      }
+      if (this.isDimensionOverall && this.selected === 0) {
+        return `Sources are aggregated across all producing dimensions. This overview defaults to Direct OoM impact for
+          responsiveness, but the Impact toggle can opt into Final when you specifically need the counterfactual
+          full-formula result. Use the grouping button to show individual dimensions and expand a dimension for its
+          ordered formula details. Bars are relative strengths, not contribution shares, and ${addUpTo}.`;
+      }
+      if (this.isDimensionOverall) {
+        return `Grouped by dimension, as in the original breakdown: expand AD1–AD8 (or the corresponding ID/TD tiers)
+          here without opening a different tab. The overall value describes combined multipliers, not AM/sec.`;
+      }
+      return `Left bar shows the direct ordered formula path, split by absolute OoM change at each step.
+        Row bars show relative impact strength normalized to the largest absolute effect on this page; they are not
+        contribution shares and ${addUpTo}.
+        Final Impact includes all later formula steps; Direct Impact only measures the selected step itself.`;
+    },
   },
   watch: {
     replacePowers(newValue) {
       player.options.multiplierTab.replacePowers = newValue;
     },
     orderedFinalImpact() {
+      sessionImpactFinal.value = this.orderedFinalImpact;
       if (!this.resource.isOrdered) return;
       this.lastLayoutChange = Date.now();
       this.rollingAverage.clear();
@@ -145,7 +180,18 @@ export default {
     this._lastStarAuditAt = -Infinity;
   },
   created() {
-    if (this.groups.length > 1 && player.options.multiplierTab.showAltGroup) this.selected = 1;
+    // Dimension roots suppress the obsolete all-tiers grouping button (the analysis header's
+    // inline switch supersedes it); child panels keep it and honor the saved toggle. Per-resource
+    // in-session grouping memory takes precedence over that shared saved fallback; the save
+    // format itself is untouched.
+    if (this.isDimensionRoot || this.groups.length <= 1) return;
+    const remembered = sessionGroupSelection.get(this.resource.key);
+    if (remembered !== undefined) {
+      const maxIndex = this.groups.length - 1;
+      this.selected = remembered < 0 ? 0 : (remembered > maxIndex ? maxIndex : remembered);
+      return;
+    }
+    if (player.options.multiplierTab.showAltGroup) this.changeGroup();
   },
   methods: {
     // Vue templates resolve helpers on the component instance.
@@ -219,6 +265,7 @@ export default {
     },
     changeGroup() {
       this.selected = (this.selected + 1) % this.groups.length;
+      sessionGroupSelection.set(this.resource.key, this.selected);
       player.options.multiplierTab.showAltGroup = this.selected === 1;
       this.showGroup = Array.repeat(false, this.entries.length);
       this.showDetails = Array.repeat(false, this.entries.length);
@@ -505,6 +552,18 @@ export default {
     transformValueString(entry) {
       const data = entry.data;
       if (data.transformAggregate) return "";
+      if (!data.hasTransform) {
+        // Informational rows without an ordered trace (e.g. ID_highestDim, ID_tickspeed) can
+        // appear inside ordered panels; show their actual effect instead of a fake "1 ➜ 1".
+        const overrideStr = entry.displayOverride;
+        if (overrideStr) return `(${overrideStr})`;
+        const values = [];
+        if (Decimal.neq(data.mult, 1)) {
+          values.push(entry.isBase ? format(data.mult, 2, 2) : formatX(data.mult, 2, 2));
+        }
+        if (Decimal.neq(data.pow, 1)) values.push(formatPow(data.pow, 2, 3));
+        return values.length === 0 ? "" : `(${values.join(", ")})`;
+      }
       if (data.transformDisplay) return `(${data.transformDisplay})`;
 
       switch (data.transformType) {
@@ -563,7 +622,7 @@ export default {
         const values = [];
         if (this.replacePowers && entry.data.pow !== 1) {
           const finalMult = this.resource.fakeValue ?? this.resource.mult;
-          values.push(formatFn(finalMult.pow(1 - 1 / entry.data.pow)));
+          values.push(formatFn(finalMult.pow(DC.D1.sub(DC.D1.div(entry.data.pow)))));
         } else {
           if (Decimal.neq(entry.data.mult, 1)) {
             values.push(formatFn(entry.data.mult));
@@ -699,7 +758,7 @@ export default {
             class="o-primary-btn c-change-display-btn"
           />
           <i
-            v-if="groups.length > 1"
+            v-if="groups.length > 1 && !isDimensionRoot"
             v-tooltip="'Change Multiplier Grouping'"
             class="o-primary-btn c-change-display-btn fas fa-arrows-rotate"
             @click="changeGroup"
@@ -875,28 +934,7 @@ export default {
         v-if="resource.isOrdered && !isEmpty"
         class="c-no-effect c-ordered-note"
       >
-        <template v-if="resource.key === 'tickspeed_galaxies'">
-          Each source is measured by removing only that source's effective galaxy count while keeping all other
-          sources and upgrades fixed. These are counterfactual impacts, not additive percentages; Galactic Ascension
-          can multiply galaxy sources instead of adding them.
-        </template>
-        <template v-else-if="isDimensionOverall && selected === 0">
-          Sources are aggregated across all producing dimensions. This overview defaults to Direct OoM impact for
-          responsiveness, but the Impact toggle can opt into Final when you specifically need the counterfactual full-
-          formula result. Use the grouping button to show individual dimensions and expand a dimension for its ordered
-          formula details. Bars are relative strengths, not contribution shares, and do not add up to
-          {{ formatPercents(1) }}.
-        </template>
-        <template v-else-if="isDimensionOverall">
-          Grouped by dimension, as in the original breakdown: expand AD1–AD8 (or the corresponding ID/TD tiers)
-          here without opening a different tab. The overall value describes combined multipliers, not AM/sec.
-        </template>
-        <template v-else>
-          Left bar shows the direct ordered formula path, split by absolute OoM change at each step.
-          Row bars show relative impact strength normalized to the largest absolute effect on this page; they are not
-          contribution shares and do not add up to {{ formatPercents(1) }}.
-          Final Impact includes all later formula steps; Direct Impact only measures the selected step itself.
-        </template>
+        {{ orderedNoteText }}
       </div>
     </div>
   </div>

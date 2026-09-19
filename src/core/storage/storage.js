@@ -64,6 +64,12 @@ export const AutoBackupSlots = [
   },
 ];
 
+// DEV-only, opt-in inspection. Never run ticks, offline progress, or save timers while
+// examining a damaged save. Use a separate browser profile to avoid sharing storage.
+function isInspectSaveMode() {
+  return DEV && new URLSearchParams(window.location.search).get("inspectSave") === "1";
+}
+
 export const GameStorage = {
   currentSlot: 0,
   saves: {
@@ -126,7 +132,7 @@ export const GameStorage = {
       this.currentSlot = 0;
       this.loadPlayerObject(root);
       this.loadBackupTimes();
-      this.backupOfflineSlots();
+      if (!isInspectSaveMode()) this.backupOfflineSlots();
       this.save(true);
       return;
     }
@@ -135,7 +141,7 @@ export const GameStorage = {
     this.currentSlot = root.current;
     this.loadPlayerObject(this.saves[this.currentSlot]);
     this.loadBackupTimes();
-    this.backupOfflineSlots();
+    if (!isInspectSaveMode()) this.backupOfflineSlots();
   },
 
   loadSlot(slot) {
@@ -144,7 +150,7 @@ export const GameStorage = {
     this.save(true);
     this.loadPlayerObject(this.saves[slot] ?? Player.defaultStart);
     this.loadBackupTimes();
-    this.backupOfflineSlots();
+    if (!isInspectSaveMode()) this.backupOfflineSlots();
     Tabs.all.find(t => t.id === player.options.lastOpenTab).show(false);
     Modal.hideAll();
     Cloud.resetTempState();
@@ -244,6 +250,8 @@ export const GameStorage = {
 
   // A few things in the current game state can prevent saving, which we want to do for all forms of saving
   canSave(ignoreSimulation = false) {
+    // Inspection is intentionally read-only even when an import or manual save is requested.
+    if (isInspectSaveMode()) return false;
     const isSelectingGlyph = GlyphSelection.active;
     const isSimulating = ui.$viewModel.modal.progressBar !== undefined && !ignoreSimulation;
     const isEnd = (GameEnd.endState >= END_STATE_MARKERS.SAVE_DISABLED && !GameEnd.removeAdditionalEnd) ||
@@ -565,7 +573,7 @@ export const GameStorage = {
 
     const rawDiff = Date.now() - player.lastUpdate;
     // We set offlineEnabled externally on importing or loading a backup; otherwise this is just a local load
-    const simulateOffline = this.offlineEnabled ?? player.options.offlineProgress;
+    const simulateOffline = !isInspectSaveMode() && (this.offlineEnabled ?? player.options.offlineProgress);
     if (simulateOffline && !Speedrun.isPausedAtStart() && player.hasSeenIntro) {
       let diff = rawDiff;
       player.speedrun.offlineTimeUsed += diff;
@@ -606,8 +614,9 @@ export const GameStorage = {
   },
   postLoadStuff() {
     // This is called from simulateTime, if that's called; otherwise, it gets called
-    // manually above
-    GameIntervals.restart();
+    // manually above. DEV inspection skips all timers, including autosave.
+    if (isInspectSaveMode()) GameIntervals.stop();
+    else GameIntervals.restart();
     GameStorage.ignoreBackupTimer = false;
     Enslaved.nextTickDiff = player.options.updateRate;
     // The condition for this secret achievement is only checked when the player is actively storing real time, either

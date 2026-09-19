@@ -1,3 +1,5 @@
+import { boundedPositivePower, boundedPositiveSum } from "../../finite-decimal";
+
 const rebuyable = props => {
   props.cost = () => getHybridCostScaling(
     player.reality.imaginaryRebuyables[props.id],
@@ -273,7 +275,19 @@ export const imaginaryUpgrades = [
     canLock: true,
     lockEvent: "enable Continuum",
     description: "Annihilation multiplier gain is improved based on Imaginary Machines",
-    effect: () => player.disablePostReality ? 1 : Decimal.clampMin(Decimal.pow(Decimal.log10(Currency.imaginaryMachines.value.add(1)).sub(10), 3), 1).toNumber(),
+    effect: () => {
+      if (player.disablePostReality) return DC.D1;
+      const machines = Currency.imaginaryMachines.value;
+      if ([machines.sign, machines.layer, machines.mag].some(x => !Number.isFinite(x)) || machines.lt(0)) {
+        throw new Error("Invalid Imaginary Machines entering Existential Elimination");
+      }
+      // This effect is consumed by Decimal arithmetic in Lai'tela. toNumber()
+      // overflows long before a valid high-layer Imaginary Machines value does.
+      // Bound the sum and cube before an intermediate result can overflow too.
+      const logMachines = Decimal.log10(boundedPositiveSum(machines, 1));
+      const positiveBase = Decimal.max(logMachines.sub(10), DC.D0);
+      return Decimal.max(boundedPositivePower(positiveBase, 3), DC.D1);
+    },
     formatEffect: value => `${formatX(value, 2, 1)}`,
     isDisabledInDoomed: () => !PelleImaginaryUpgrade.existentialElimination.canBeApplied
   },
@@ -304,7 +318,7 @@ export const imaginaryUpgrades = [
       gainedGlyphLevel().actualLevel.gte(20000),
     checkEvent: GAME_EVENT.GAME_TICK_AFTER,
     description: "Increase free Dimboost count based on Tesseract count",
-    effect: () => player.disablePostReality ? 1 : Math.floor(0.25 * Math.pow(Tesseracts.effectiveCount, 2)),
+    effect: () => player.disablePostReality ? DC.D1 : Decimal.floor(new Decimal(Tesseracts.effectiveCount).pow(2).times(0.25)),
     formatEffect: value => `${formatX(value)}`,
     isDisabledInDoomed: () => !PelleImaginaryUpgrade.planarPurification.canBeApplied
   },

@@ -27,11 +27,13 @@ export const perkShop = {
     increment: 2,
     description: () => PerkShopUpgrade.glyphLevel.viewCharge ? `Multiply pre-instability Glyph level based on highest-ever
       Glyph level` : `Increase pre-instability Glyph levels by ${formatPercents(0.05)}`,
-    effect: () => player.disablePostReality ? 1 : (PerkShopUpgrade.glyphLevel.isCharged
+    // Always return Decimal: Effect memoizes its numeric/Decimal cap handling on
+    // first use, which may occur before the glyph-level reward is charged.
+    effect: () => new Decimal(player.disablePostReality ? 1 : (PerkShopUpgrade.glyphLevel.isCharged
       ? PerkShopUpgrade.glyphLevel.chargedEffect()
-      : PerkShopUpgrade.glyphLevel.preChargedEffect()),
+      : PerkShopUpgrade.glyphLevel.preChargedEffect())),
     preChargedEffect: bought => Math.pow(1.05, bought),
-    chargedEffect: () => Decimal.pow(player.records.bestEndgame.glyphLevel, 0.2).toNumber(),
+    chargedEffect: () => Decimal.pow(player.records.bestEndgame.glyphLevel, 0.2),
     formatEffect: value => formatX(value, 2, 2),
     formatCost: value => format(value, 2),
     costCap: () => (Ra.unlocks.perkShopIncrease.canBeApplied ? 1048576 : 2048),

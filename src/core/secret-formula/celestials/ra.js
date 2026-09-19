@@ -63,7 +63,7 @@ export const ra = {
     teresaXP: {
       id: 2,
       reward: "All Memory Chunks produce more Memories based on Reality Machines",
-      effect: () => player.disablePostReality ? 1 : 1 + Decimal.pow(Currency.realityMachines.value.add(1).pLog10().div(100), 0.5).toNumber(),
+      effect: () => player.disablePostReality ? DC.D1 : DC.D1.add(Decimal.pow(Currency.realityMachines.value.add(1).pLog10().div(100), 0.5)),
       pet: "teresa",
       level: 5,
       displayIcon: `Ϟ`
@@ -119,7 +119,7 @@ export const ra = {
     effarigXP: {
       id: 9,
       reward: "All Memory Chunks produce more Memories based on highest Glyph level",
-      effect: () => player.disablePostReality ? 1 : player.records.bestReality.glyphLevel.div(7000).add(1).toNumber(),
+      effect: () => player.disablePostReality ? DC.D1 : player.records.bestReality.glyphLevel.div(7000).add(1),
       pet: "effarig",
       level: 5,
       displayIcon: `<span class="fas fa-clone"></span>`
@@ -141,7 +141,7 @@ export const ra = {
     relicShardGlyphLevelBoost: {
       id: 12,
       reward: "Glyph level is increased based on Relic Shards gained",
-      effect: () => player.disablePostReality ? 0 : 100 * Decimal.pow(Decimal.log10(Decimal.max(Effarig.shardsGained, 1)), 2).toNumber(),
+      effect: () => player.disablePostReality ? DC.D0 : Decimal.pow(Decimal.log10(Decimal.max(Effarig.shardsGained, 1)), 2).times(100),
       pet: "effarig",
       level: 15,
       displayIcon: `<span class="fas fa-fire"></span>`
@@ -372,7 +372,7 @@ export const ra = {
     instabilityDelay: {
       id: 36,
       reward: "Relic Shards delay the first three levels of Glyph Instability",
-      effect: () => player.disablePostReality ? 0 : Decimal.log10(player.celestials.effarig.relicShards.add(1)).times(10).toNumber(),
+      effect: () => player.disablePostReality ? DC.D0 : Decimal.log10(player.celestials.effarig.relicShards.add(1)).times(10),
       pet: "effarig",
       level: 40,
       displayIcon: `<span class="fas fa-arrow-right"></span>`,

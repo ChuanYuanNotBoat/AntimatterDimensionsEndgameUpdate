@@ -42,8 +42,11 @@ class D {
   static sign(x) { return Math.sign(Number(x)); }
 }
 const e = (n = 1.01) => ({ effectValue: new D(n), effectOrDefault: () => new D(n),
-  chargedEffect: { effectValue: new D(1.02), effectOrDefault: () => new D(1.02) },
-  isUnlocked: true, isBought: true, isCompleted: true });
+  chargedEffect: { effectValue: new D(1.02), effectOrDefault: () => new D(1.02),
+    applyEffect(apply) { return apply(this.effectValue); } },
+  isUnlocked: true, isBought: true, isCompleted: true,
+  // Real gameplay effects expose applyEffect; the finite-guarded formulas rely on it.
+  applyEffect(apply) { return apply(this.effectValue); } });
 const eMap = new Proxy({}, { get: (_obj, key) => e(String(key).length % 2 ? 1.02 : 1.03) });
 function world(options = {}) {
   const dimensions = Array.from({ length: 8 }, (_, i) => ({ tier: i + 1, bought: new D(30),
@@ -53,6 +56,10 @@ function world(options = {}) {
   const challenge = id => ({ ...any(id), isRunning: options.ec === id, reward: e(1.05) });
   const scenarios = {
     D, Decimal: D, DC: { D0: new D(0), D1: new D(1) },
+    // The gameplay formula and the AD shadow trace share the finite-guard helpers; in this
+    // fully finite mocked world the plain arithmetic forms are exactly equivalent to them.
+    boundedPositivePower: (base, exponent) => new D(Math.pow(Number(base), Number(exponent))),
+    boundedPositiveProduct: (left, right) => new D(Number(left) * Number(right)),
     AntimatterDimension: tier => dimensions[tier - 1],
     AntimatterDimensions: { all: dimensions, buyTenMultiplier: new D(1.2), buyOoMPower: new D(0.03) },
     Achievements: { power: new D(1.14), powerConv: v => new D(1.02 + Number(v) / 100) },

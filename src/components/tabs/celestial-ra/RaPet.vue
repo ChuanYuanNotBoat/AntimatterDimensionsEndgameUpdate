@@ -66,6 +66,9 @@ export default {
     memoryGainTooltip() {
       return `Based on ${this.pet.memoryGain}`;
     },
+    hasMemoryMultiplier() {
+      return Decimal.gt(this.memoryMultiplier, 1);
+    },
   },
   methods: {
     update() {
@@ -267,7 +270,7 @@ export default {
           </span>
         </div>
       </div>
-      <div v-if="memoryMultiplier > 1 && !isRaCapped">
+      <div v-if="hasMemoryMultiplier && !isRaCapped">
         Multiplying all Memory production by {{ format(memoryMultiplier, 2, 3) }}
         <span :ach-tooltip="memoryGainTooltip">
           <i class="fas fa-question-circle" />

@@ -1,3 +1,4 @@
+import { boundedPositivePower, boundedPositiveProduct } from "../../finite-decimal";
 function rebuyableCost(initialCost, increment, id, capIncreaseAt, superExponent) {
   if (player.dilation.rebuyables[id] >= superExponent) return Decimal.pow10(1e10).pow(Decimal.pow(1.0002, Math.max(player.dilation.rebuyables[id] - superExponent, 0)));
   return Decimal.multiply(initialCost, Decimal.pow(increment, player.dilation.rebuyables[id] + (Math.max(player.dilation.rebuyables[id] - capIncreaseAt, 0) * Math.max(player.dilation.rebuyables[id] - (capIncreaseAt + 1), 0) / 2)));
@@ -36,12 +37,13 @@ export const dilationUpgrades = {
         ), 2, 2)} Dilated Time gain`
         : "Double Dilated Time gain"),
     effect: bought => {
-      const base = 2 * Effects.product(
+      let base = DC.D2;
+      for (const source of [
         SingularityMilestone.dilatedTimeFromSingularities,
         Achievement(187),
         BreakEternityUpgrade.dilatedTimeMultiplier
-      );
-      return Decimal.pow(base, bought);
+      ]) source.applyEffect(factor => { base = boundedPositiveProduct(base, factor); });
+      return boundedPositivePower(base, bought);
     },
     formatEffect: value => {
       const nonInteger = SingularityMilestone.dilatedTimeFromSingularities.canBeApplied ||
@@ -86,7 +88,7 @@ export const dilationUpgrades = {
     },
     effect: bought => {
       if (Pelle.isDoomed && !PelleDestructionUpgrade.x3TPUpgrade.canBeApplied) return DC.D1.pow(bought);
-      return DC.D3.pow(bought);
+      return boundedPositivePower(DC.D3, bought);
     },
     formatEffect: value => formatX(value, 2),
     formatCost: value => format(value, 2),
@@ -126,14 +128,14 @@ export const dilationUpgrades = {
     id: 6,
     cost: 5e7,
     description: "Antimatter Dimension multiplier based on Dilated Time, unaffected by Time Dilation",
-    effect: () => Currency.dilatedTime.value.pow(308).clampMin(1),
+    effect: () => boundedPositivePower(Currency.dilatedTime.value.max(1), 308),
     formatEffect: value => formatX(value, 2, 1)
   },
   ipMultDT: {
     id: 7,
     cost: 2e12,
     description: "Gain a multiplier to Infinity Points based on Dilated Time",
-    effect: () => Currency.dilatedTime.value.pow(1000).clampMin(1),
+    effect: () => boundedPositivePower(Currency.dilatedTime.value.max(1), 1000),
     formatEffect: value => formatX(value, 2, 1),
     cap: () => Effarig.eternityCap
   },

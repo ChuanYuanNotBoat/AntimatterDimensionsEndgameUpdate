@@ -44,7 +44,10 @@ function setup(selected = 2) {
     createEntryInfo: key => ({ key, isOrdered: /^(IP|EP|AD|ID|TD)_total/.test(key) }),
     availableMultiplierTabGroups: navigation.availableMultiplierTabGroups,
     resolveMultiplierTab: navigation.resolveMultiplierTab,
-    MultiplierBreakdownEntry: {}
+    MultiplierBreakdownEntry: {},
+    // The AM production-audit panel was added to the tab after these tests were written;
+    // the harness only needs the reference to resolve, the AM path is not exercised here.
+    AntimatterProductionBreakdown: {}
   };
   const options = loadVueScript('MultiplierBreakdownTab.vue', globals);
   const instance = { ...options.data(), $set: (target, key, value) => { target[key] = value; } };
@@ -132,8 +135,13 @@ test('dimension roots suppress the obsolete all-tiers grouping; child controls r
   const options = loadVueScript('MultiplierBreakdownEntry.vue', {
     BreakdownEntryInfo: class {},
     PrimaryToggleButton: {},
+    MultiplierBreakdownTotal: {},
+    GameplayLimitSummary: {},
     getResourceEntryInfoGroups: () => [],
     PercentageRollingAverage: class {},
+    // Methods-registered import helper (methods starResourceForEntry / auditEtherealStar);
+    // only the lookup helper is needed to construct the options object here.
+    starResourceForEntry: () => null,
     player: { options: { multiplierTab: { showAltGroup: true } } }
   });
   for (const key of ['AD_total', 'ID_total', 'TD_total', 'AD_total_3']) {

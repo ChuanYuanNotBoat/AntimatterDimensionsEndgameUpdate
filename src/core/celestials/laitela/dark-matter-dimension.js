@@ -1,4 +1,5 @@
 import { DimensionState } from "../../dimensions/dimension";
+import { boundedPositiveProduct, boundedPositiveSum } from "../../finite-decimal";
 
 /**
  * Constants for easily adjusting values
@@ -286,6 +287,14 @@ export class DarkMatterDimensionState extends DimensionState {
  */
 export const DarkMatterDimension = DarkMatterDimensionState.createAccessor();
 
+function addDarkEnergy(amount) {
+  Currency.darkEnergy.value = boundedPositiveSum(Currency.darkEnergy.value, amount);
+}
+
+function addUnnerfedDarkMatter(amount) {
+  Currency.unnerfedDarkMatter.value = boundedPositiveSum(Currency.unnerfedDarkMatter.value, amount);
+}
+
 export const DarkMatterDimensions = {
   /**
    * @type {DarkMatterDimension[]}
@@ -300,17 +309,22 @@ export const DarkMatterDimensions = {
       dim.timeSinceLastUpdate += realDiff;
       if (dim.interval.lt(dim.timeSinceLastUpdate)) {
         const ticks = Decimal.floor(new Decimal(dim.timeSinceLastUpdate).div(dim.interval));
-        const productionDM = dim.amount.times(ticks).times(dim.powerDM);
+        const productionDM = boundedPositiveProduct(boundedPositiveProduct(dim.amount, ticks), dim.powerDM);
         if (tier === 1) {
-          Currency.unnerfedDarkMatter.add(productionDM);
+          addUnnerfedDarkMatter(productionDM);
         } else {
-          DarkMatterDimension(tier - 1).amount = DarkMatterDimension(tier - 1).amount.plus(productionDM);
+          const target = DarkMatterDimension(tier - 1);
+          target.amount = boundedPositiveSum(target.amount, productionDM);
         }
-        if (!SingularityMilestone.dmdMultBooster.isUnlocked) Currency.darkEnergy.add(ticks.mul(dim.powerDE));
+        if (!SingularityMilestone.dmdMultBooster.isUnlocked) {
+          addDarkEnergy(boundedPositiveProduct(ticks, dim.powerDE));
+        }
         dim.timeSinceLastUpdate -= dim.interval.times(ticks).toNumber();
       }
     }
-    if (SingularityMilestone.dmdMultBooster.isUnlocked) Currency.darkEnergy.add(DarkMatterDimensions.totalPowerDE.times(realDiff / 1000));
+    if (SingularityMilestone.dmdMultBooster.isUnlocked) {
+      addDarkEnergy(boundedPositiveProduct(DarkMatterDimensions.totalPowerDE, realDiff / 1000));
+    }
     if (SingularityMilestone.dim4Generation.canBeApplied && Laitela.annihilationUnlocked) {
       const type = DarkMatterDimensions.highestUnlocked;
       DarkMatterDimension(type).amount = DarkMatterDimension(type).amount
@@ -321,7 +335,7 @@ export const DarkMatterDimensions = {
   get totalPowerDE() {
     let total = DC.D1;
     for (let de = 1; de < 9; de++) {
-      total = total.times(DarkMatterDimension(de).powerDE);
+      total = boundedPositiveProduct(total, DarkMatterDimension(de).powerDE);
     }
     return total;
   },

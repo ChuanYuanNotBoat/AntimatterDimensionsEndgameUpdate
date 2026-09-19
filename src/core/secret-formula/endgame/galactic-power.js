@@ -1,3 +1,18 @@
+import { boundedPositivePower } from "../../finite-decimal";
+
+// The RG reward and free-Galaxy reward feed the gameplay galaxy count. Both
+// must remain Decimal when their empowered exponents exceed JS Number range.
+function empoweredReplicantiGalaxyReward(base) {
+  let result = new Decimal(base);
+  if (GalacticPowers.galaxyEmpowerment1.isUnlocked) {
+    result = boundedPositivePower(result, GalacticPowers.galaxyEmpowerment1.reward);
+  }
+  if (GalacticPowers.galaxyEmpowerment2.isUnlocked) {
+    result = boundedPositivePower(result, GalacticPowers.galaxyEmpowerment2.reward);
+  }
+  return result;
+}
+
 export const galacticPowerRewards = {
   galaxyStrength: {
     id: 1,
@@ -10,7 +25,7 @@ export const galacticPowerRewards = {
     id: 2,
     galacticPower: 1e10,
     reward: "Delay Remote Galaxy Scaling",
-    effect: () => player.disablePostReality ? 0 : Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).times(5), 2).min(2.5e6).times(Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).div(Decimal.log10(DC.NUMMAX)).max(1), 2)).pow(GalacticPowers.galaxyEmpowerment1.isUnlocked ? GalacticPowers.galaxyEmpowerment1.reward : 1).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1).toNumber(),
+    effect: () => player.disablePostReality ? DC.D0 : Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).times(5), 2).min(2.5e6).times(Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).div(Decimal.log10(DC.NUMMAX)).max(1), 2)).pow(GalacticPowers.galaxyEmpowerment1.isUnlocked ? GalacticPowers.galaxyEmpowerment1.reward : 1).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1),
     formatEffect: value => `Remote Galaxy Scaling is delayed by ${formatHybridLarge(value, 3)} Galaxies`
   },
   remoteGalaxyPower: {
@@ -31,7 +46,10 @@ export const galacticPowerRewards = {
     id: 5,
     galacticPower: 1e100,
     reward: "Multiply Replicanti Galaxy gain",
-    effect: () => player.disablePostReality ? 1 : Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).div(100), 1.25).add(1).min(6).times(Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).div(Decimal.log10(DC.NUMMAX)).max(1), 0.5)).pow(GalacticPowers.galaxyEmpowerment1.isUnlocked ? GalacticPowers.galaxyEmpowerment1.reward : 1).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1).toNumber(),
+    effect: () => player.disablePostReality ? DC.D1 : empoweredReplicantiGalaxyReward(
+      Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1)).div(100), 1.25).add(1).min(6)
+        .times(Decimal.pow(Decimal.log10(Currency.galacticPower.value.add(1))
+          .div(Decimal.log10(DC.NUMMAX)).max(1), 0.5))),
     formatEffect: value => `Gain ${formatX(value, 2, 2)} more Replicanti Galaxies`
   },
   tachyonGalaxies: {
@@ -76,15 +94,17 @@ export const galacticPowerRewards = {
     id: 12,
     galacticPower: new Decimal("1e25000"),
     reward: "Gain free Galaxies",
-    effect: () => player.disablePostReality ? DC.D1 : Decimal.pow(Currency.galacticPower.value.div("1e25000"), 0.001).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1),
+    effect: () => player.disablePostReality ? DC.D1 : boundedPositivePower(
+      Decimal.pow(Currency.galacticPower.value.div("1e25000"), 0.001),
+      GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1),
     formatEffect: value => `${formatHybridLarge(value, 3)} free Galaxies`
   },
   galaxyScaling: {
     id: 13,
     galacticPower: new Decimal("1e40000"),
     reward: "Reduce the base cost scaling of Antimatter Galaxies",
-    effect: () => player.disablePostReality ? 1 : Decimal.pow(0.9, Decimal.log10(Decimal.log10(Currency.galacticPower.value.add(1)).div(40000)).add(1).pow(2).sub(1)).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1).toNumber(),
-    formatEffect: value => `Antimatter Galaxy cost scaling is reduced by ${formatPercents(1 - value, 2, 2)}`
+    effect: () => player.disablePostReality ? DC.D1 : Decimal.pow(0.9, Decimal.log10(Decimal.log10(Currency.galacticPower.value.add(1)).div(40000)).add(1).pow(2).sub(1)).pow(GalacticPowers.galaxyEmpowerment2.isUnlocked ? GalacticPowers.galaxyEmpowerment2.reward : 1),
+    formatEffect: value => `Antimatter Galaxy cost scaling is reduced by ${formatDecimalPercents(DC.D1.sub(value), 2)}`
   },
   galaxyGenerationEmpowerment: {
     id: 14,

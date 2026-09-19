@@ -1,4 +1,5 @@
 import { DimensionState } from "./dimension";
+import { boundedPositivePower, boundedPositiveProduct, boundedPositiveSum } from "../finite-decimal";
 
 export function buySingleTimeDimension(tier, auto = false) {
   if (tier === 4 && Alpha.isRunning && Alpha.currentStage < 13) return;
@@ -204,7 +205,7 @@ export function timeDimensionCommonMultiplier() {
   if (EternityChallenge(9).isRunning) {
     mult = mult.times(
       Decimal.pow(
-        Decimal.clampMin(Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate / 7).add(1).log2(), 1),
+        Decimal.clampMin(Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate.div(7)).add(1).log2(), 1),
         4)
         .clampMin(1));
   }
@@ -374,6 +375,20 @@ class TimeDimensionState extends DimensionState {
     return this.productionPerSecondWithMultiplier();
   }
 
+  // This resource can reach the Decimal layer limit long before its dimensions reset.
+  // Bound both production and the destination's balance, not just the final setter.
+  productionForDiff(diff) {
+    return boundedPositiveProduct(this.productionPerSecond, new Decimal(diff).div(1000));
+  }
+
+  produceDimensions(dimension, diff) {
+    dimension.amount = boundedPositiveSum(dimension.amount, this.productionForDiff(diff));
+  }
+
+  produceCurrency(currency, diff) {
+    currency.value = boundedPositiveSum(currency.value, this.productionForDiff(diff));
+  }
+
   productionPerSecondWithMultiplier(multiplier = undefined) {
     if (EternityChallenge(1).isRunning || EternityChallenge(10).isRunning ||
     (Laitela.isRunning && this.tier > Laitela.maxAllowedDimension)) {
@@ -385,12 +400,12 @@ class TimeDimensionState extends DimensionState {
     if (this.tier === this.highestProducingDimension && Alpha.isRunning && Alpha.currentStage >= 14 && Alpha.currentStage < 23) {
       return this.totalAmount;
     }
-    let production = this.totalAmount.times(multiplier ?? this.multiplier);
+    let production = boundedPositiveProduct(this.totalAmount, multiplier ?? this.multiplier);
     if (EternityChallenge(7).isRunning) {
-      production = production.times(Tickspeed.perSecond);
+      production = boundedPositiveProduct(production, Tickspeed.perSecond);
     }
     if (this._tier === 1 && !EternityChallenge(7).isRunning) {
-      production = production.pow(getAdjustedGlyphEffect("timeshardpow"));
+      production = boundedPositivePower(production, getAdjustedGlyphEffect("timeshardpow"));
     }
     return production;
   }
@@ -545,7 +560,9 @@ export const TimeDimensions = {
     }
 
     EternityChallenge(7).reward.applyEffect(production => {
-      InfinityDimension(8).amount = InfinityDimension(8).amount.plus(production.times(diff).div(1000));
+      const id8 = InfinityDimension(8);
+      const gained = boundedPositiveProduct(production, new Decimal(diff).div(1000));
+      id8.amount = boundedPositiveSum(id8.amount, gained);
     });
   }
 };

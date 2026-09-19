@@ -112,13 +112,58 @@ export function getEtherealPowerGainPerSecond() {
 }
 
 export function tryAdvanceSector() {
-  if (Currency.etherealPower.lt(Ethereal.sectorThreshold)) return;
-  if (DivinityMilestone.ascendedSurge.isReached) {
-    const highestPossibleSector = Decimal.floor(Currency.etherealPower.value.ln().div(
-      Decimal.lambertw(Currency.etherealPower.value.ln()))).add(1);
-    player.endgame.ethereal.sector += highestPossibleSector.sub(player.endgame.ethereal.sector).toNumber();
+  const current = player.endgame.ethereal.sector;
+  if (!Number.isFinite(current) || !Number.isInteger(current) || current < 1) {
+    throw new Error("Invalid saved Ethereal sector");
   }
-  else player.endgame.ethereal.sector++;
+  // Sector is stored as a native Number. Above this point integer increments
+  // cannot be represented exactly; a larger range requires a save migration.
+  // Do not lower an existing (possibly legacy) above-boundary sector.
+  if (current >= Number.MAX_SAFE_INTEGER) return;
+
+  const power = Currency.etherealPower.value;
+  if ([power.sign, power.layer, power.mag].some(x => !Number.isFinite(x))) {
+    throw new Error("Invalid Ethereal Power entering sector advancement");
+  }
+  if (Currency.etherealPower.lt(Ethereal.sectorThreshold)) return;
+  if (!DivinityMilestone.ascendedSurge.isReached) {
+    player.endgame.ethereal.sector = current + 1;
+    return;
+  }
+
+  // The inverse of s^s is ln(power) / W(ln(power)); converting an enormous
+  // inverse (or its difference from the old sector) to Number can write Infinity.
+  // Check the exact integer-storage boundary in Decimal *before* inversion.
+  const limit = Number.MAX_SAFE_INTEGER;
+  const maxThreshold = Decimal.pow(limit - 1, limit - 1);
+  if (power.gte(maxThreshold)) {
+    player.endgame.ethereal.sector = limit;
+    return;
+  }
+
+  // At power = 1, ln(power) / W(ln(power)) is 0/0. Its limit is 1.
+  if (power.eq(1)) {
+    player.endgame.ethereal.sector = 2;
+    return;
+  }
+
+  const logarithm = power.ln();
+  const highestPossibleSector = Decimal.floor(logarithm.div(Decimal.lambertw(logarithm))).add(1);
+  if ([highestPossibleSector.sign, highestPossibleSector.layer, highestPossibleSector.mag]
+    .some(x => !Number.isFinite(x)) || highestPossibleSector.lt(1) || highestPossibleSector.gte(limit)) {
+    throw new Error("Invalid Ethereal sector inverse");
+  }
+  let target = Math.round(highestPossibleSector.toNumber());
+  if (!Number.isSafeInteger(target)) throw new Error("Unsafe Ethereal sector conversion");
+  // Lambert W and Decimal flooring can be off by one at an exact threshold.
+  // Confirm the advancement against the actual s^s requirement.
+  if (target > current + 1 && power.lt(Decimal.pow(target - 1, target - 1))) target--;
+  if (target < limit && power.gte(Decimal.pow(target, target))) target++;
+  if (target <= current) target = current + 1;
+  if (target > current + 1 && power.lt(Decimal.pow(target - 1, target - 1))) {
+    throw new Error("Ethereal sector inverse exceeds affordable threshold");
+  }
+  player.endgame.ethereal.sector = target;
 }
 
 export function resetForStar(id) {

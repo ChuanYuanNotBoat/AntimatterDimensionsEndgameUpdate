@@ -7,6 +7,7 @@ import {
   orderedPowerStep,
   orderedTransformStep,
 } from "./ordered-breakdown";
+import { boundedPositivePower } from "../../finite-decimal";
 
 function ipPositivePowers(skipKey = null) {
   let value = DC.D1;
@@ -42,14 +43,14 @@ function ipDivisors(skipKey = null) {
   const final = skipKey === "powerCompensation"
     ? improved
     : Decimal.max(improved, ipPositivePowers(skipKey).times(2));
-  return { improved, final, formulaFinal: final.toNumber() };
+  return { improved, final, formulaFinal: final };
 }
 
 function ipFromDivisor(divisor) {
   // The Pelle-disabled IP multiplier branch always uses the post-Break-Infinity formula, regardless of player.break.
   const useBrokenInfinityFormula = Pelle.isDisabled("IPMults") || player.break;
   return useBrokenInfinityFormula
-    ? Decimal.pow10(player.records.thisInfinity.maxAM.add(1).log10().div(divisor).sub(0.75))
+    ? boundedPositivePower(10, player.records.thisInfinity.maxAM.add(1).log10().div(divisor).sub(0.75))
     : new Decimal(308).div(divisor);
 }
 
@@ -140,7 +141,7 @@ function evaluateInfinityPoints(skipKey = null, steps = null) {
 
   const divisors = ipDivisors(skipKey);
   const baseAt308 = ipFromDivisor(308);
-  const improvedBase = ipFromDivisor(divisors.improved.toNumber());
+  const improvedBase = ipFromDivisor(divisors.improved);
   const finalBase = ipFromDivisor(divisors.formulaFinal);
 
   if (steps) {

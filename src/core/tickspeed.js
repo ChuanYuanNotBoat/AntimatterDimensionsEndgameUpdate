@@ -1,6 +1,6 @@
 // Optional source exclusion is used only by the stats breakdown for exact marginal
 // effective-count comparisons; the default path is unchanged for gameplay.
-export function effectiveBaseGalaxies(excludedSource = null) {
+export function effectiveBaseGalaxies(excludedSource = null, details = null) {
   let alternation = Decimal.max(0, Replicanti.amount.add(1).log10().div(1e6)).times(AlchemyResource.alternation.effectValue).add(1);
   let galaxies = excludedSource === "antimatter" ? DC.D0 : player.galaxies;
   if (!player.disablePostReality && Alpha.currentStage >= 3) galaxies = galaxies.times(alternation);
@@ -21,10 +21,27 @@ export function effectiveBaseGalaxies(excludedSource = null) {
   replicantiGalaxies = replicantiGalaxies.add(nonActivePathReplicantiGalaxies.times(Effects.sum(EternityChallenge(8).reward)));
   if (!player.disablePostReality && Alpha.currentStage >= 3) replicantiGalaxies = replicantiGalaxies.times(alternation);
   if (excludedSource === "replicanti") replicantiGalaxies = DC.D0;
+  // Source detail is collected only on demand by the statistics page. It uses the
+  // values produced by this exact gameplay path, not independently reproduced formulas.
+  if (details !== null) {
+    details.replicantiBought = new Decimal(Replicanti.galaxies.bought);
+    details.replicantiExtra = new Decimal(Replicanti.galaxies.extra);
+  }
   let freeGalaxies = excludedSource === "tachyon" ? DC.D0 : player.dilation.totalTachyonGalaxies;
   freeGalaxies = freeGalaxies.times(alternation);
   let extraGalaxies = excludedSource === "galactic" ? DC.D0 : GalacticPower.freeGalaxies;
   if (!player.disablePostReality && Alpha.currentStage >= 3) extraGalaxies = extraGalaxies.times(alternation);
+  if (details !== null) {
+    details.ascension = GalacticPowers.galacticAscension.isUnlocked;
+    details.sources = [
+      { key: "antimatter", name: "Antimatter Galaxies", raw: new Decimal(player.galaxies), effective: galaxies },
+      { key: "generated", name: "Galaxy Generator", raw: new Decimal(GalaxyGenerator.galaxies), effective: generatedGalaxies },
+      { key: "replicanti", name: "Replicanti Galaxies", raw: new Decimal(Replicanti.galaxies.bought), effective: replicantiGalaxies },
+      { key: "tachyon", name: "Tachyon Galaxies", raw: new Decimal(player.dilation.totalTachyonGalaxies), effective: freeGalaxies },
+      { key: "galactic", name: "Galactic Power reward #12", raw: new Decimal(GalacticPower.freeGalaxies), effective: extraGalaxies,
+        unlocked: GalacticPowers.freeGalaxies.isUnlocked },
+    ];
+  }
   return GalacticPowers.galacticAscension.isUnlocked ?
     Decimal.max(galaxies.max(1).times(generatedGalaxies.max(1)).times(replicantiGalaxies.max(1)).times(
     freeGalaxies.max(1)).times(extraGalaxies.max(1)), 0) : Decimal.max(galaxies.add(generatedGalaxies).add(

@@ -125,7 +125,7 @@ export default {
 
       this.isEndgameUnlocked = PlayerProgress.endgameUnlocked();
       this.scaleStart.copyFrom(DilationUpgradeScaling.PRIMARY_SCALING);
-      this.viewSoftcap = this.maxDT.gte(this.softcapStart);
+      this.viewSoftcap = !EndgameMastery(271).isBought && this.maxDT.gte(this.softcapStart);
       this.softcapStart.copyFrom(DilationSoftcapStart.PRIMARY_THRESHOLD());
     }
   }

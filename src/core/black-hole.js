@@ -3,26 +3,66 @@ import { SpeedrunMilestones } from "./speedrun";
 class BlackHoleUpgradeState {
   constructor(config) {
     const { getAmount, setAmount, calculateValue, initialCost, costMult } = config;
-    this.incrementAmount = () => setAmount(getAmount() + 1);
-    this.bulkIncrementAmount = () => setAmount(getAmount() + getInverseHybridCostScaling(
-      Pelle.isDoomed ? Currency.realityShards.value : Currency.realityMachines.value,
-      1e30,
-      initialCost,
-      costMult,
-      0.2,
-      DC.E310,
-      1e5,
-      10
-    ).sub(getAmount()).toNumber());
+    this._getAmount = getAmount;
+    this._setAmount = setAmount;
+    this._costAt = count => getHybridCostScaling(count,
+      1e30, initialCost, costMult, 0.2, DC.E310, 1e5, 10);
+    this.incrementAmount = () => {
+      const current = getAmount();
+      if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER) return false;
+      setAmount(current + 1);
+      return true;
+    };
+    // The inverse and the save count have different numeric types. Determine the
+    // price at the Number storage ceiling before asking the inverse to convert
+    // an arbitrarily large Decimal estimation back into a native Number.
+    this._lazySafeLimitCost = new Lazy(() => this._costAt(Number.MAX_SAFE_INTEGER - 1));
+    this.bulkPurchasePlan = () => {
+      const current = getAmount();
+      if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER) {
+        if (!this._warnedUnrepresentableCount) {
+          console.warn(`Black Hole ${this.id}: upgrade count is outside safe Number storage`, current);
+          this._warnedUnrepresentableCount = true;
+        }
+        return null;
+      }
+      const currency = Pelle.isDoomed ? Currency.realityShards : Currency.realityMachines;
+      const money = currency.value;
+      if (!Decimal.isFinite(money) || money.lt(0)) throw new Error("Invalid Black Hole purchase currency");
+      const safeLimitCost = this._lazySafeLimitCost.value;
+      if (!Decimal.isFinite(safeLimitCost)) throw new Error("Invalid Black Hole safe-limit cost");
+      let target;
+      if (money.gte(safeLimitCost)) {
+        target = Number.MAX_SAFE_INTEGER;
+      } else {
+        const affordable = getInverseHybridCostScaling(money,
+          1e30, initialCost, costMult, 0.2, DC.E310, 1e5, 10);
+        if (!Decimal.isFinite(affordable) || affordable.lt(0)) {
+          throw new Error("Invalid Black Hole bulk inverse");
+        }
+        // Do not call toNumber on an unrepresentably large Decimal.
+        if (affordable.gte(Number.MAX_SAFE_INTEGER)) {
+          target = Number.MAX_SAFE_INTEGER;
+        } else {
+          target = affordable.toNumber();
+        }
+        if (!Number.isSafeInteger(target)) target = current + 1;
+      }
+      // The inverse can undershoot or overshoot by one due to precision. A
+      // single affordable purchase is always a safe fallback.
+      if (target <= current) target = current + 1;
+      let price = this._costAt(target - 1);
+      if (!Decimal.isFinite(price)) throw new Error("Invalid Black Hole bulk price");
+      if (price.gt(money)) {
+        target = current + 1;
+        price = this._costAt(current);
+      }
+      if (!Decimal.isFinite(price)) throw new Error("Invalid Black Hole single price");
+      if (price.gt(money)) return null;
+      return { amount: target, price };
+    };
     this._lazyValue = new Lazy(() => calculateValue(getAmount()));
-    this._lazyCost = new Lazy(() => getHybridCostScaling(getAmount(),
-      1e30,
-      initialCost,
-      costMult,
-      0.2,
-      DC.E310,
-      1e5,
-      10));
+    this._lazyCost = new Lazy(() => this._costAt(getAmount()));
     this.id = config.id;
     this.hasAutobuyer = config.hasAutobuyer;
     this.onPurchase = config.onPurchase;
@@ -41,14 +81,17 @@ class BlackHoleUpgradeState {
   }
 
   purchase() {
-    if (!this.isAffordable || this.value === 0) return;
+    if (!this.isAffordable || this.value === 0) return false;
+    const current = this._getAmount();
+    if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER) return false;
 
     // Keep the cycle phase consistent before and after purchase so that upgrading doesn't cause weird behavior
     // such as immediately activating it when inactive (or worse, skipping past the active segment entirely).
     const bh = BlackHole(this.id);
     const beforeProg = bh.isCharged ? 1 - bh.stateProgress : bh.stateProgress;
 
-    Pelle.isDoomed ? Currency.realityShards.purchase(this.cost) : Currency.realityMachines.purchase(this.cost);
+    const currency = Pelle.isDoomed ? Currency.realityShards : Currency.realityMachines;
+    if (!currency.purchase(this.cost)) return false;
     this.incrementAmount();
     this._lazyValue.invalidate();
     this._lazyCost.invalidate();
@@ -67,18 +110,23 @@ class BlackHoleUpgradeState {
     if (bh.isPermanent) player.blackHole[this.id - 1].active = true;
 
     EventHub.dispatch(GAME_EVENT.BLACK_HOLE_UPGRADE_BOUGHT);
+    return true;
   }
 
   bulkPurchase() {
-    if (!this.isAffordable || this.value === 0) return;
+    const plan = this.bulkPurchasePlan();
+    if (!plan || this.value === 0) return false;
 
     // Keep the cycle phase consistent before and after purchase so that upgrading doesn't cause weird behavior
     // such as immediately activating it when inactive (or worse, skipping past the active segment entirely).
     const bh = BlackHole(this.id);
     const beforeProg = bh.isCharged ? 1 - bh.stateProgress : bh.stateProgress;
 
-    this.bulkIncrementAmount();
-    Pelle.isDoomed ? Currency.realityShards.purchase(this.cost) : Currency.realityMachines.purchase(this.cost);
+    const currency = Pelle.isDoomed ? Currency.realityShards : Currency.realityMachines;
+    // Verify and purchase the last upgrade's cost BEFORE committing the count.
+    // The former code updated the save first and paid only the old cached cost.
+    if (!currency.purchase(plan.price)) return false;
+    this._setAmount(plan.amount);
     this._lazyValue.invalidate();
     this._lazyCost.invalidate();
     if (this.onPurchase) {
@@ -96,6 +144,7 @@ class BlackHoleUpgradeState {
     if (bh.isPermanent) player.blackHole[this.id - 1].active = true;
 
     EventHub.dispatch(GAME_EVENT.BLACK_HOLE_UPGRADE_BOUGHT);
+    return true;
   }
 }
 

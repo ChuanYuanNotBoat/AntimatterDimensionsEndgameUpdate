@@ -1,10 +1,46 @@
 import { GameMechanicState, RebuyableMechanicState, SetPurchasableMechanicState } from "../game-mechanics";
+import { boundedPositivePower, boundedPositiveProduct } from "../finite-decimal";
 import { DimensionState } from "./dimension";
 
+// CD multipliers are strictly nonnegative. Check each source independently so a
+// broken effect remains diagnostic, while valid extreme powers/products stop at
+// the same BEMAX representation boundary used by other dimension formulas.
+function checkedCelestialFactor(value, name) {
+  const factor = new Decimal(value);
+  if (![factor.sign, factor.layer, factor.mag].every(Number.isFinite) || factor.lt(0)) {
+    throw new Error(`Invalid Celestial Dimension factor: ${name}`);
+  }
+  return factor;
+}
+
+function celestialProduct(left, right, name) {
+  return boundedPositiveProduct(checkedCelestialFactor(left, `${name} left`),
+    checkedCelestialFactor(right, name));
+}
+
+function celestialPower(base, exponent, name) {
+  return boundedPositivePower(checkedCelestialFactor(base, `${name} base`),
+    checkedCelestialFactor(exponent, `${name} exponent`));
+}
+
+function celestialEffects(value, effects, power = false) {
+  let result = value;
+  for (const [name, effect] of effects) {
+    if (effect === null || effect === undefined) continue;
+    effect.applyEffect(factor => {
+      result = power ? celestialPower(result, factor, name) : celestialProduct(result, factor, name);
+    });
+  }
+  return result;
+}
+
 export function celestialDimensionCommonMultiplier() {
-  let mult = DC.D1;
-  mult = mult.timesEffectsOf(EndgameUpgrade(11), CelestialEternityUpgrade.largeCDMult, EndgameMastery(191));
-  mult = mult.times(Ethereal.sectorBoost);
+  let mult = celestialEffects(DC.D1, [
+    ["Endgame Upgrade 11", EndgameUpgrade(11)],
+    ["Celestial Eternity CD multiplier", CelestialEternityUpgrade.largeCDMult],
+    ["Endgame Mastery 191", EndgameMastery(191)]
+  ]);
+  mult = celestialProduct(mult, Ethereal.sectorBoost, "Ethereal sector boost");
   return mult;
 }
 
@@ -98,21 +134,31 @@ class CelestialDimensionState extends DimensionState {
   }
 
   get productionPerSecond() {
-    let production = this.amount;
-    return production.times(this.multiplier).times(CelestialTickspeed.baseValue);
+    const production = celestialProduct(this.amount, this.multiplier, `CD${this.tier} amount * multiplier`);
+    return celestialProduct(production, CelestialTickspeed.baseValue, `CD${this.tier} tickspeed`);
   }
 
   get multiplier() {
     const tier = this.tier;
-    let mult = GameCache.celestialDimensionCommonMultiplier.value;
-    mult = mult.times(Decimal.pow(this.powerMultiplier, Decimal.floor(this.baseAmount)));
-    mult = mult.powEffectsOf(SingularityMilestone.dimensionPow, Ra.unlocks.celestialDimensionPower);
-    mult = mult.pow(CelestialDimensions.alphaDecayRemnant);
-    mult = mult.times(CelestialDimBoost.multiplierToCDTier());
-    mult = mult.timesEffectOf(CelestialInfinityUpgrade.antimatterCelestialDimBuff);
-    mult = mult.powEffectOf(ResurgenceUpgrade.synergy2);
-    mult = mult.pow(Achievements.powerConv(EndgameMastery(191).effectOrDefault(1)));
-    return mult;
+    let mult = checkedCelestialFactor(GameCache.celestialDimensionCommonMultiplier.value, "common multiplier");
+    mult = celestialProduct(mult,
+      celestialPower(this.powerMultiplier, Decimal.floor(this.baseAmount), `CD${tier} purchases`),
+      `CD${tier} per-purchase multiplier`);
+    mult = celestialEffects(mult, [
+      ["Singularity dimension power", SingularityMilestone.dimensionPow],
+      ["Ra celestial dimension power", Ra.unlocks.celestialDimensionPower]
+    ], true);
+    mult = celestialPower(mult, CelestialDimensions.alphaDecayRemnant, "Alpha decay remnant");
+    mult = celestialProduct(mult, CelestialDimBoost.multiplierToCDTier(), "Celestial Dimension Boost");
+    mult = celestialEffects(mult, [
+      ["Celestial Infinity antimatter buff", CelestialInfinityUpgrade.antimatterCelestialDimBuff]
+    ]);
+    mult = celestialEffects(mult, [["Resurgence synergy 2", ResurgenceUpgrade.synergy2]], true);
+    // Decimal equivalent of Achievements.powerConv(). The Number-returning
+    // helper can overflow when Mastery 191 itself is still finite.
+    const mastery = checkedCelestialFactor(EndgameMastery(191).effectOrDefault(1), "Mastery 191 achievement effect");
+    const achievementExponent = mastery.log10().add(1).log10().div(20).add(1);
+    return celestialPower(mult, achievementExponent, "Mastery 191 achievement conversion");
   }
 
   get isProducing() {
@@ -130,8 +176,13 @@ class CelestialDimensionState extends DimensionState {
   }
 
   get powerMultiplier() {
-    return new Decimal(CelestialInfinityUpgrade.celDimPurchaseBoost.effectOrDefault(this._powerMultiplier)).timesEffectOf(
-      CelestialBreakInfinityUpgrade.celDimPurchaseBuff).pow(SingularityMilestone.perPurchaseDimMult.effectOrDefault(1));
+    const base = checkedCelestialFactor(
+      CelestialInfinityUpgrade.celDimPurchaseBoost.effectOrDefault(this._powerMultiplier), "per-purchase base");
+    const buffed = celestialEffects(base, [
+      ["Celestial Break Infinity purchase buff", CelestialBreakInfinityUpgrade.celDimPurchaseBuff]
+    ]);
+    return celestialPower(buffed, SingularityMilestone.perPurchaseDimMult.effectOrDefault(1),
+      "Singularity per-purchase power");
   }
 
   get purchases() {
@@ -235,8 +286,17 @@ export const CelestialDimensions = {
   },
 
   get SOFTCAP() {
-    const base = DC.E100.timesEffectsOf(EndgameMastery(94), EndgameUpgrade(5)).times(Ethereal.sectorBoost).pow(CelestialDimensions.alphaDecayRemnant);
-    return Decimal.min(base, DC.NUMMAX).times(Decimal.pow(base.div(DC.NUMMAX).max(1), 1 / CelestialDimensions.OVERFLOW_MAG));
+    const effects = celestialEffects(DC.E100, [
+      ["Mastery 94 softcap", EndgameMastery(94)],
+      ["Endgame Upgrade 5 softcap", EndgameUpgrade(5)]
+    ]);
+    const base = celestialPower(celestialProduct(effects, Ethereal.sectorBoost, "softcap sector boost"),
+      this.alphaDecayRemnant, "softcap Alpha decay");
+    const overflowMagnitude = checkedCelestialFactor(this.OVERFLOW_MAG, "softcap overflow magnitude");
+    if (overflowMagnitude.eq(0)) throw new Error("Zero Celestial Dimension softcap overflow magnitude");
+    const overflow = celestialPower(base.div(DC.NUMMAX).max(1), DC.D1.div(overflowMagnitude),
+      "softcap overflow exponent");
+    return celestialProduct(Decimal.min(base, DC.NUMMAX), overflow, "softcap result");
   },
 
   get OVERFLOW() {
@@ -334,14 +394,19 @@ export const CelestialDimensions = {
   },
 
   get conversionExponent() {
-    if (player.disablePostReality && !Alpha.isRunning) return 0;
-    let base = CelestialInfinityUpgrade.celestialMatterConversionBuff.effectOrDefault(2);
-    if (Pelle.isDoomed) base /= 10;
-    let exponent = 1;
-    if (base > 1) exponent *= Effects.product(EndgameMastery(104), Ra.unlocks.celestialDimensionConversionPower, EndgameMastery(261));
-    base *= Effects.product(Achievement(208), Achievement(224), CelestialEternityUpgrade.conversionFormulaImprovement);
-    base *= EtherealStars.yellow.reward.toNumber();
-    return Math.pow(base, exponent) * (Alpha.isRunning ? Alpha.celestialMatterConversionNerf : 1);
+    if (player.disablePostReality && !Alpha.isRunning) return DC.D0;
+    let base = new Decimal(CelestialInfinityUpgrade.celestialMatterConversionBuff.effectOrDefault(2));
+    if (Pelle.isDoomed) base = base.div(10);
+    // Keep the entire formula in Decimal space. Yellow Star's reward can exceed
+    // Number.MAX_VALUE; converting it to Number turns the exponent into Infinity
+    // and can poison the game-speed calculation which consumes this value.
+    const exponent = base.gt(1)
+      ? DC.D1.timesEffectsOf(EndgameMastery(104), Ra.unlocks.celestialDimensionConversionPower,
+        EndgameMastery(261))
+      : DC.D1;
+    base = base.timesEffectsOf(Achievement(208), Achievement(224),
+      CelestialEternityUpgrade.conversionFormulaImprovement).times(EtherealStars.yellow.reward);
+    return base.pow(exponent).times(Alpha.isRunning ? Alpha.celestialMatterConversionNerf : 1);
   }
 };
 
@@ -438,12 +503,13 @@ class CelestialDimBoostRequirement {
 
 export class CelestialDimBoost {
   static get power() {
-    return new Decimal(CelestialInfinityUpgrade.celDimBoostBuff.effectOrDefault(10)).timesEffectOf(
-      CelestialBreakInfinityUpgrade.celDimboostBuff);
+    const base = checkedCelestialFactor(CelestialInfinityUpgrade.celDimBoostBuff.effectOrDefault(10),
+      "Celestial Dimension Boost base");
+    return celestialEffects(base, [["Celestial Break Infinity boost buff", CelestialBreakInfinityUpgrade.celDimboostBuff]]);
   }
 
   static multiplierToCDTier() {
-    return CelestialDimBoost.power.pow(this.purchasedBoosts).clampMin(1);
+    return celestialPower(this.power, this.purchasedBoosts, "Celestial Dimension Boost count").clampMin(1);
   }
 
   static get maxBoosts() {

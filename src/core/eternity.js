@@ -1,10 +1,11 @@
 import { GameMechanicState, SetPurchasableMechanicState } from "./game-mechanics";
 import FullScreenAnimationHandler from "./full-screen-animation-handler";
+import { boundedPositiveSum } from "./finite-decimal";
 
 function giveEternityRewards(auto) {
   player.records.bestEternity.time = Decimal.min(player.records.thisEternity.time, player.records.bestEternity.time);
   player.records.bestEternity.realTime = Math.clamp(player.records.thisEternity.realTime, 1, player.records.bestEternity.realTime);
-  Currency.eternityPoints.add(gainedEternityPoints());
+  Currency.eternityPoints.value = boundedPositiveSum(Currency.eternityPoints.value, gainedEternityPoints());
 
   const newEternities = gainedEternities();
 

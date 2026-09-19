@@ -6,3 +6,8 @@ dist
 node_modules
 .eslintrc.js
 .DS_Store
+
+save
+.gitignore
+tests/fixtures/.gitignore
+.gitignore

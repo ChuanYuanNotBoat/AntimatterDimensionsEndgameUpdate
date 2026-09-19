@@ -56,7 +56,7 @@ function ec9InfinityPowerMult() {
   if (!EternityChallenge(9).isRunning) return DC.D1;
   return Decimal.pow(
     Decimal.clampMin(
-      Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate / 7).add(1).log2(),
+      Currency.infinityPower.value.pow(InfinityDimensions.powerConversionRate.div(7)).add(1).log2(),
       1
     ),
     4

@@ -1,3 +1,31 @@
+// Diagnostic-only safety check: do not cap a failed calculation or rewrite a save.
+// Keep raw Decimal components: calling toNumber() or format() here loses the evidence.
+function dimensionNumberDetails(value) {
+  if (value instanceof Decimal) {
+    return `Decimal(sign=${value.sign}, layer=${value.layer}, mag=${value.mag})`;
+  }
+  return String(value);
+}
+
+export function assertDimensionFinite(value, dimension, step, diff, destination = null) {
+  const valid = value instanceof Decimal
+    ? Number.isFinite(value.sign) && Number.isFinite(value.layer) && Number.isFinite(value.mag)
+    : typeof value === "number" && Number.isFinite(value);
+  if (valid) return value;
+  const sourceName = `${dimension.constructor.name}(${dimension.tier})`;
+  const targetName = destination ? ` -> ${destination.constructor.name}(${destination.tier})` : "";
+  // Getters can fail while producing the bad value; a diagnostic must never replace the original failure.
+  const describe = getter => {
+    try { return dimensionNumberDetails(getter()); } catch (error) { return `getter failed: ${error.message}`; }
+  };
+  throw new Error(
+    `Dimension non-finite at ${sourceName}${targetName}, step=${step}; ` +
+    `value=${dimensionNumberDetails(value)}; diff=${dimensionNumberDetails(diff)}; ` +
+    `sourceAmount=${describe(() => dimension.amount)}; ` +
+    `sourceMultiplier=${describe(() => dimension.multiplier)}`
+  );
+}
+
 export class DimensionState {
   constructor(getData, tier) {
     this._tier = tier;
@@ -33,7 +61,10 @@ export class DimensionState {
   }
 
   productionForDiff(diff) {
-    return this.productionPerSecond.times(diff).div(1000);
+    const rate = assertDimensionFinite(this.productionPerSecond, this, "productionPerSecond", diff);
+    assertDimensionFinite(diff, this, "diff", diff);
+    const product = assertDimensionFinite(rate.times(diff), this, "rate * diff", diff);
+    return assertDimensionFinite(product.div(1000), this, "rate * diff / 1000", diff);
   }
 
   produceCurrency(currency, diff) {
@@ -41,7 +72,10 @@ export class DimensionState {
   }
 
   produceDimensions(dimension, diff) {
-    dimension.amount = dimension.amount.plus(this.productionForDiff(diff));
+    const gain = this.productionForDiff(diff);
+    const before = assertDimensionFinite(dimension.amount, this, "destination amount before production", diff, dimension);
+    const after = assertDimensionFinite(before.plus(gain), this, "destination amount + gain", diff, dimension);
+    dimension.amount = after;
   }
 
   static get dimensionCount() { return 8; }

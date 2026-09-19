@@ -11,7 +11,7 @@ export const tickspeed = {
       return `${format(tickRate, 2, 2)}/sec on ${formatInt(count)} producing Dimensions → ${formatX(tickRate.pow(count), 2, 2)}`;
     },
     multValue: () => Tickspeed.perSecond.pow(MultiplierTabHelper.activeDimCount("AD")),
-    isActive: () => Tickspeed.perSecond.gt(1) && effectiveBaseGalaxies().gt(0),
+    isActive: () => Tickspeed.isUnlocked,
     isOrdered: true,
     overlay: ["<i class='fa-solid fa-clock' />"],
     icon: MultiplierTabIcons.TICKSPEED,
@@ -21,6 +21,13 @@ export const tickspeed = {
     transformValue: () => TickspeedBreakdown.transform("base"),
     isActive: true,
     icon: MultiplierTabIcons.ACHIEVEMENT,
+  },
+  upgrades: {
+    name: "Tickspeed upgrades",
+    transformValue: () => TickspeedBreakdown.transform("upgrades"),
+    isActive: true,
+    isOrdered: true,
+    icon: MultiplierTabIcons.PURCHASE("AD"),
   },
   purchased: {
     name: "Purchased / Continuum Tickspeed upgrades",
@@ -88,14 +95,14 @@ export const tickspeed = {
 // Retained for compatibility with any non-root tree references to the old purchase entries.
 export const tickspeedUpgrades = {
   purchased: {
-    name: "Purchased Tickspeed Upgrades",
-    multValue: () => Decimal.pow10(Laitela.continuumActive ? Tickspeed.continuumValue : player.totalTickBought),
+    name: "Purchased / Continuum Tickspeed upgrades",
+    transformValue: () => TickspeedBreakdown.transform("purchased"),
     isActive: true,
     icon: MultiplierTabIcons.PURCHASE("AD"),
   },
   free: {
-    name: "Free Tickspeed Upgrades",
-    multValue: () => Decimal.pow10(player.totalTickGained),
+    name: "Free Tickspeed upgrades from Time Shards",
+    transformValue: () => TickspeedBreakdown.transform("free"),
     isActive: () => Currency.timeShards.gt(0),
     icon: MultiplierTabIcons.SPECIFIC_GLYPH("time"),
   },
